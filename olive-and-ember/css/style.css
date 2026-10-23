@@ -1,5 +1,5 @@
 /* ==========================================================================
-   Basil & Bloom — Modern Contemporary Restaurant Website
+   Bliss & Bloom — Modern Contemporary Restaurant Website
    Brand Color Palette:
      - Deep Forest Green: #173D32
      - Warm Ivory: #FAF7F0
@@ -3612,6 +3612,481 @@ h1, h2, h3, h4, h5, h6 {
 .course-sub {
   font-size: 0.875rem;
   color: var(--color-charcoal-muted);
+}
+
+/* --------------------------------------------------------------------------
+   24. Cloud Services, Auth & Supabase / Google Sheets UI
+   -------------------------------------------------------------------------- */
+/* Header Auth Button & User Profile */
+.auth-header-wrap {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+}
+
+.btn-auth {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.5rem 1rem;
+  font-size: 0.875rem;
+  font-weight: 600;
+  color: var(--color-bg-ivory);
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.22);
+  border-radius: var(--radius-full);
+  cursor: pointer;
+  transition: all var(--transition-fast);
+}
+
+.btn-auth:hover {
+  background: rgba(255, 255, 255, 0.18);
+  border-color: var(--color-gold);
+  color: var(--color-gold-light);
+}
+
+.auth-icon {
+  width: 18px;
+  height: 18px;
+}
+
+/* User Profile Pill when logged in */
+.user-profile-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.55rem;
+  padding: 0.35rem 0.85rem 0.35rem 0.45rem;
+  background: rgba(255, 255, 255, 0.12);
+  border: 1px solid rgba(197, 160, 89, 0.35);
+  border-radius: var(--radius-full);
+  color: var(--color-bg-ivory);
+  cursor: pointer;
+  font-size: 0.875rem;
+  font-weight: 500;
+  transition: all var(--transition-fast);
+}
+
+.user-profile-pill:hover,
+.user-profile-pill.active {
+  background: rgba(255, 255, 255, 0.22);
+  border-color: var(--color-gold);
+}
+
+.user-avatar-circle {
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  background: linear-gradient(135deg, var(--color-terracotta), var(--color-gold));
+  color: var(--color-white);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 700;
+  font-size: 0.8rem;
+  text-transform: uppercase;
+}
+
+.user-name-short {
+  max-width: 110px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.user-chevron {
+  width: 14px;
+  height: 14px;
+  opacity: 0.75;
+  transition: transform var(--transition-fast);
+}
+
+.user-profile-pill.active .user-chevron {
+  transform: rotate(180deg);
+}
+
+/* Dropdown Menu */
+.user-menu-dropdown {
+  position: absolute;
+  top: calc(100% + 10px);
+  right: 0;
+  width: 260px;
+  background: var(--color-white);
+  border-radius: var(--radius-md);
+  box-shadow: 0 16px 40px rgba(0, 0, 0, 0.22);
+  border: 1px solid var(--color-border);
+  padding: 0.75rem 0;
+  z-index: 1100;
+  animation: dropdownFadeIn 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+@keyframes dropdownFadeIn {
+  from { opacity: 0; transform: translateY(-8px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.user-menu-header {
+  padding: 0.5rem 1.25rem 0.75rem;
+}
+
+.user-menu-name {
+  display: block;
+  font-weight: 700;
+  font-size: 0.95rem;
+  color: var(--color-primary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.user-menu-email {
+  display: block;
+  font-size: 0.8rem;
+  color: var(--color-charcoal-muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.user-menu-divider {
+  height: 1px;
+  background: var(--color-border-subtle);
+  margin: 0.4rem 0;
+}
+
+.user-menu-item {
+  width: 100%;
+  padding: 0.65rem 1.25rem;
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  border: none;
+  background: none;
+  font-size: 0.875rem;
+  color: var(--color-charcoal);
+  cursor: pointer;
+  text-align: left;
+  transition: background var(--transition-fast), color var(--transition-fast);
+}
+
+.user-menu-item svg {
+  width: 18px;
+  height: 18px;
+  color: var(--color-charcoal-muted);
+  flex-shrink: 0;
+}
+
+.user-menu-item:hover {
+  background: var(--color-sage-light);
+  color: var(--color-primary);
+}
+
+.user-menu-item:hover svg {
+  color: var(--color-primary);
+}
+
+.user-menu-item.user-menu-logout {
+  color: var(--color-error);
+}
+
+.user-menu-item.user-menu-logout svg {
+  color: var(--color-error);
+}
+
+.user-menu-item.user-menu-logout:hover {
+  background: var(--color-error-bg);
+}
+
+.badge-count {
+  margin-left: auto;
+  background: var(--color-terracotta);
+  color: var(--color-white);
+  font-size: 0.7rem;
+  font-weight: 700;
+  padding: 0.15rem 0.5rem;
+  border-radius: var(--radius-full);
+}
+
+/* Modals Shared Architecture */
+.cloud-modal-dialog {
+  max-width: 480px;
+  width: 92%;
+  background: var(--color-white);
+  border-radius: var(--radius-lg);
+  padding: 2.25rem;
+  position: relative;
+  z-index: 1001;
+  max-height: 90vh;
+  overflow-y: auto;
+  box-shadow: 0 24px 60px rgba(14, 40, 32, 0.28);
+}
+
+/* Auth Modal Tabs */
+.auth-tabs {
+  display: flex;
+  border-bottom: 2px solid var(--color-border-subtle);
+  margin-bottom: 1.5rem;
+  gap: 1rem;
+}
+
+.auth-tab-btn {
+  background: none;
+  border: none;
+  padding: 0.75rem 0.5rem;
+  font-family: var(--font-sans);
+  font-size: 1rem;
+  font-weight: 600;
+  color: var(--color-charcoal-muted);
+  cursor: pointer;
+  position: relative;
+  transition: color var(--transition-fast);
+}
+
+.auth-tab-btn:hover {
+  color: var(--color-primary);
+}
+
+.auth-tab-btn.active {
+  color: var(--color-primary);
+}
+
+.auth-tab-btn.active::after {
+  content: '';
+  position: absolute;
+  bottom: -2px;
+  left: 0;
+  width: 100%;
+  height: 2px;
+  background: var(--color-terracotta);
+}
+
+/* Cloud Status Callout in Modal */
+.cloud-mode-banner {
+  display: flex;
+  align-items: center;
+  gap: 0.65rem;
+  padding: 0.65rem 0.95rem;
+  border-radius: var(--radius-sm);
+  font-size: 0.8125rem;
+  margin-bottom: 1.25rem;
+  background: var(--color-sage-light);
+  border: 1px solid var(--color-sage);
+  color: var(--color-primary);
+}
+
+.cloud-mode-banner.is-live {
+  background: var(--color-success-bg);
+  border-color: rgba(30, 107, 71, 0.3);
+  color: var(--color-success);
+}
+
+.cloud-status-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--color-gold);
+  flex-shrink: 0;
+}
+
+.cloud-mode-banner.is-live .cloud-status-dot {
+  background: var(--color-success);
+  box-shadow: 0 0 0 3px rgba(30, 107, 71, 0.2);
+}
+
+/* Status Notifications inside forms */
+.form-notification {
+  padding: 0.75rem 1rem;
+  border-radius: var(--radius-sm);
+  font-size: 0.85rem;
+  margin-bottom: 1rem;
+  display: none;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.form-notification.error {
+  display: flex;
+  background: var(--color-error-bg);
+  color: var(--color-error);
+  border: 1px solid rgba(184, 58, 58, 0.2);
+}
+
+.form-notification.success {
+  display: flex;
+  background: var(--color-success-bg);
+  color: var(--color-success);
+  border: 1px solid rgba(30, 107, 71, 0.2);
+}
+
+/* User Bookings Cards in My Reservations Modal */
+.reservations-list-container {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+  margin-top: 1.25rem;
+}
+
+.reservation-record-card {
+  background: var(--color-bg-ivory);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  padding: 1.25rem;
+  transition: transform var(--transition-fast), box-shadow var(--transition-fast);
+}
+
+.reservation-record-card:hover {
+  transform: translateY(-2px);
+  box-shadow: var(--shadow-sm);
+}
+
+.record-card-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 0.75rem;
+}
+
+.record-ref {
+  font-weight: 700;
+  font-size: 0.95rem;
+  color: var(--color-primary);
+}
+
+.record-status-tag {
+  font-size: 0.75rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  padding: 0.25rem 0.65rem;
+  border-radius: var(--radius-full);
+  background: var(--color-success-bg);
+  color: var(--color-success);
+}
+
+.record-status-tag.cancelled {
+  background: var(--color-error-bg);
+  color: var(--color-error);
+}
+
+.record-meta-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 0.5rem;
+  font-size: 0.85rem;
+  margin-bottom: 0.85rem;
+}
+
+.record-meta-item {
+  color: var(--color-charcoal-muted);
+}
+
+.record-meta-item strong {
+  color: var(--color-charcoal);
+}
+
+.record-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 0.5rem;
+  margin-top: 0.5rem;
+  padding-top: 0.75rem;
+  border-top: 1px solid var(--color-border-subtle);
+}
+
+.btn-record-cancel {
+  background: none;
+  border: 1px solid var(--color-border);
+  color: var(--color-error);
+  padding: 0.35rem 0.75rem;
+  border-radius: var(--radius-sm);
+  font-size: 0.8rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all var(--transition-fast);
+}
+
+.btn-record-cancel:hover {
+  background: var(--color-error-bg);
+  border-color: var(--color-error);
+}
+
+/* Empty State */
+.empty-reservations {
+  text-align: center;
+  padding: 2.5rem 1rem;
+}
+
+.empty-icon {
+  width: 48px;
+  height: 48px;
+  color: var(--color-sage-dark);
+  margin-bottom: 1rem;
+}
+
+/* Cloud Settings Modal UI */
+.cloud-service-card {
+  background: var(--color-bg-ivory);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  padding: 1.25rem;
+  margin-bottom: 1rem;
+}
+
+.cloud-service-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 0.85rem;
+}
+
+.cloud-service-title {
+  font-weight: 700;
+  color: var(--color-primary);
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 1rem;
+}
+
+.cloud-badge {
+  font-size: 0.75rem;
+  font-weight: 700;
+  padding: 0.2rem 0.65rem;
+  border-radius: var(--radius-full);
+}
+
+.cloud-badge.active {
+  background: var(--color-success-bg);
+  color: var(--color-success);
+}
+
+.cloud-badge.demo {
+  background: var(--color-sage);
+  color: var(--color-primary);
+}
+
+.btn-footer-link {
+  background: none;
+  border: none;
+  color: var(--color-sage);
+  font-size: 0.8125rem;
+  cursor: pointer;
+  padding: 0.25rem 0.5rem;
+  border-radius: var(--radius-sm);
+  transition: all var(--transition-fast);
+  display: inline-flex;
+  align-items: center;
+}
+
+.btn-footer-link:hover {
+  color: var(--color-gold);
+  background: rgba(255, 255, 255, 0.05);
+}
+
+/* Responsive adjustments */
+@media (max-width: 991px) {
+  .user-menu-dropdown {
+    right: -20px;
+  }
 }
 
 /* --------------------------------------------------------------------------

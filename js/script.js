@@ -1,5 +1,5 @@
 /**
- * Basil & Bloom — Modern Contemporary Restaurant Website
+ * Bliss & Bloom — Modern Contemporary Restaurant Website
  * Script: Client-Side Interactions, Validation, Dynamic UI & Custom Smooth Scroll
  */
 
@@ -372,7 +372,7 @@ document.addEventListener('DOMContentLoaded', () => {
     galleryItems.forEach((item, index) => {
       if (item.style.display !== 'none') {
         const imgEl = item.querySelector('img');
-        const caption = item.getAttribute('data-caption') || (imgEl ? imgEl.alt : 'Basil & Bloom');
+        const caption = item.getAttribute('data-caption') || (imgEl ? imgEl.alt : 'Bliss & Bloom');
         const src = imgEl ? imgEl.src : '';
         activeGalleryData.push({ src, caption, alt: imgEl ? imgEl.alt : '', originalIndex: index });
       }
@@ -701,36 +701,604 @@ document.addEventListener('DOMContentLoaded', () => {
     resOccasionInput.addEventListener('change', updateLiveTicket);
   }
 
-  // LocalStorage Management
-  const STORAGE_KEY = 'basil_bloom_demo_reservations';
+  // =========================================================================
+  // 10. CLOUD SERVICES INITIALIZATION (SUPABASE & GOOGLE SHEETS)
+  // =========================================================================
+  const STORAGE_KEY = 'bliss_bloom_reservations';
+  const DEMO_USER_KEY = 'bliss_bloom_demo_auth_user';
 
+  let supabaseClient = null;
+  let currentUser = null;
+
+  const initSupabaseClient = () => {
+    supabaseClient = null;
+    if (window.supabase && window.ENV_CONFIG && window.ENV_CONFIG.isSupabaseConfigured()) {
+      try {
+        supabaseClient = window.supabase.createClient(
+          window.ENV_CONFIG.SUPABASE_URL,
+          window.ENV_CONFIG.SUPABASE_ANON_KEY
+        );
+        console.info('Supabase client initialized successfully.');
+      } catch (err) {
+        console.warn('Could not initialize Supabase client:', err);
+      }
+    }
+  };
+  initSupabaseClient();
+
+  // Helper to submit data to Google Sheets Webhook
+  const submitToGoogleSheets = async (payload) => {
+    if (!window.ENV_CONFIG || !window.ENV_CONFIG.isGoogleSheetsConfigured()) {
+      return { success: false, reason: 'unconfigured' };
+    }
+    try {
+      await fetch(window.ENV_CONFIG.GOOGLE_SHEET_WEBHOOK_URL, {
+        method: 'POST',
+        mode: 'no-cors',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify(payload)
+      });
+      return { success: true };
+    } catch (err) {
+      console.warn('Google Sheets Webhook submission error:', err);
+      return { success: false, error: err };
+    }
+  };
+
+  // LocalStorage Helpers for offline/demo persistence
   const getSavedReservations = () => {
     try {
       const data = localStorage.getItem(STORAGE_KEY);
       return data ? JSON.parse(data) : [];
     } catch (e) {
-      console.warn('LocalStorage error:', e);
+      console.warn('LocalStorage read error:', e);
       return [];
     }
   };
 
-  const saveReservation = (booking) => {
+  const saveLocalReservation = (booking) => {
     try {
       const current = getSavedReservations();
       current.unshift(booking);
       localStorage.setItem(STORAGE_KEY, JSON.stringify(current));
     } catch (e) {
-      console.warn('Could not save booking:', e);
+      console.warn('Could not save booking locally:', e);
     }
   };
 
+  // Update Cloud Status Badges across the UI
+  const refreshCloudStatusUI = () => {
+    const isSupabaseLive = Boolean(supabaseClient && window.ENV_CONFIG.isSupabaseConfigured());
+    const isSheetsLive = Boolean(window.ENV_CONFIG.isGoogleSheetsConfigured());
+
+    // Reservation section badge
+    const cloudStatusBadge = document.getElementById('cloud-status-badge');
+    const cloudStatusText = document.getElementById('cloud-status-text');
+    if (cloudStatusBadge && cloudStatusText) {
+      if (isSupabaseLive) {
+        cloudStatusBadge.classList.add('is-live');
+        cloudStatusText.innerHTML = '<strong>Live Cloud Active:</strong> Reservations are synced to Supabase PostgreSQL database.';
+      } else {
+        cloudStatusBadge.classList.remove('is-live');
+        cloudStatusText.textContent = 'Demo Mode: Reservations saved locally in browser storage. Connect Supabase in Cloud Settings for live database sync.';
+      }
+    }
+
+    // Auth modal banner
+    const authCloudBanner = document.getElementById('auth-cloud-mode-banner');
+    const authCloudText = document.getElementById('auth-cloud-mode-text');
+    if (authCloudBanner && authCloudText) {
+      if (isSupabaseLive) {
+        authCloudBanner.classList.add('is-live');
+        authCloudText.textContent = '🟢 Connected to Supabase Cloud Auth & Database';
+      } else {
+        authCloudBanner.classList.remove('is-live');
+        authCloudText.textContent = 'ℹ️ Demo Mode: Connect Supabase in Cloud Settings for live cloud authentication.';
+      }
+    }
+
+    // Cloud settings modal badges
+    const badgeSupabase = document.getElementById('badge-supabase-status');
+    if (badgeSupabase) {
+      if (isSupabaseLive) {
+        badgeSupabase.className = 'cloud-badge active';
+        badgeSupabase.textContent = '🟢 Connected';
+      } else {
+        badgeSupabase.className = 'cloud-badge demo';
+        badgeSupabase.textContent = '⚪ Demo Mode';
+      }
+    }
+
+    const badgeSheets = document.getElementById('badge-sheets-status');
+    if (badgeSheets) {
+      if (isSheetsLive) {
+        badgeSheets.className = 'cloud-badge active';
+        badgeSheets.textContent = '🟢 Connected';
+      } else {
+        badgeSheets.className = 'cloud-badge demo';
+        badgeSheets.textContent = '⚪ Demo Mode';
+      }
+    }
+  };
+  refreshCloudStatusUI();
+
+  // =========================================================================
+  // 11. AUTHENTICATION (SUPABASE AUTH & DEMO FALLBACK)
+  // =========================================================================
+  const authModal = document.getElementById('auth-modal');
+  const authBackdrop = document.getElementById('auth-backdrop');
+  const authCloseBtn = document.getElementById('auth-close-btn');
+
+  const tabSigninBtn = document.getElementById('tab-signin-btn');
+  const tabSignupBtn = document.getElementById('tab-signup-btn');
+  const formSignin = document.getElementById('form-signin');
+  const formSignup = document.getElementById('form-signup');
+  const formForgotPassword = document.getElementById('form-forgot-password');
+
+  const authAlert = document.getElementById('auth-alert');
+  const authAlertMsg = document.getElementById('auth-alert-message');
+
+  const headerAuthBtn = document.getElementById('header-auth-btn');
+  const authBtnLabel = document.getElementById('auth-btn-label');
+  const userMenuDropdown = document.getElementById('user-menu-dropdown');
+  const userDisplayName = document.getElementById('user-display-name');
+  const userDisplayEmail = document.getElementById('user-display-email');
+  const userBookingsCount = document.getElementById('user-bookings-count');
+  const openMyReservationsBtn = document.getElementById('open-my-reservations-btn');
+  const openCloudSettingsBtn = document.getElementById('open-cloud-settings-btn');
+  const userSignoutBtn = document.getElementById('user-signout-btn');
+
+  const mobileAuthBtn = document.getElementById('mobile-auth-btn');
+  const mobileAuthBtnLabel = document.getElementById('mobile-auth-btn-label');
+  const mobileMyReservationsBtn = document.getElementById('mobile-my-reservations-btn');
+  const mobileBookingsCount = document.getElementById('mobile-bookings-count');
+
+  const showAuthAlert = (message, type = 'error') => {
+    if (!authAlert || !authAlertMsg) return;
+    authAlert.className = `form-notification ${type}`;
+    authAlertMsg.textContent = message;
+    authAlert.style.display = 'flex';
+  };
+
+  const hideAuthAlert = () => {
+    if (!authAlert) return;
+    authAlert.style.display = 'none';
+  };
+
+  const switchAuthTab = (tab) => {
+    hideAuthAlert();
+    if (tab === 'signin') {
+      if (tabSigninBtn) {
+        tabSigninBtn.classList.add('active');
+        tabSigninBtn.setAttribute('aria-selected', 'true');
+      }
+      if (tabSignupBtn) {
+        tabSignupBtn.classList.remove('active');
+        tabSignupBtn.setAttribute('aria-selected', 'false');
+      }
+      if (formSignin) formSignin.style.display = 'block';
+      if (formSignup) formSignup.style.display = 'none';
+      if (formForgotPassword) formForgotPassword.style.display = 'none';
+    } else if (tab === 'signup') {
+      if (tabSignupBtn) {
+        tabSignupBtn.classList.add('active');
+        tabSignupBtn.setAttribute('aria-selected', 'true');
+      }
+      if (tabSigninBtn) {
+        tabSigninBtn.classList.remove('active');
+        tabSigninBtn.setAttribute('aria-selected', 'false');
+      }
+      if (formSignup) formSignup.style.display = 'block';
+      if (formSignin) formSignin.style.display = 'none';
+      if (formForgotPassword) formForgotPassword.style.display = 'none';
+    } else if (tab === 'forgot') {
+      if (formForgotPassword) formForgotPassword.style.display = 'block';
+      if (formSignin) formSignin.style.display = 'none';
+      if (formSignup) formSignup.style.display = 'none';
+    }
+  };
+
+  if (tabSigninBtn) tabSigninBtn.addEventListener('click', () => switchAuthTab('signin'));
+  if (tabSignupBtn) tabSignupBtn.addEventListener('click', () => switchAuthTab('signup'));
+
+  const btnForgotToggle = document.getElementById('btn-forgot-password-toggle');
+  if (btnForgotToggle) btnForgotToggle.addEventListener('click', () => switchAuthTab('forgot'));
+
+  const backToSigninBtn = document.getElementById('back-to-signin-btn');
+  if (backToSigninBtn) backToSigninBtn.addEventListener('click', () => switchAuthTab('signin'));
+
+  const switchToSignupBtn = document.getElementById('switch-to-signup-btn');
+  if (switchToSignupBtn) switchToSignupBtn.addEventListener('click', () => switchAuthTab('signup'));
+
+  const switchToSigninBtn = document.getElementById('switch-to-signin-btn');
+  if (switchToSigninBtn) switchToSigninBtn.addEventListener('click', () => switchAuthTab('signin'));
+
+  const openAuthModal = () => {
+    if (!authModal) return;
+    refreshCloudStatusUI();
+    switchAuthTab('signin');
+    authModal.style.display = 'flex';
+    document.body.style.overflow = 'hidden';
+  };
+
+  const closeAuthModal = () => {
+    if (!authModal) return;
+    authModal.style.display = 'none';
+    document.body.style.overflow = '';
+    hideAuthAlert();
+  };
+
+  if (authCloseBtn) authCloseBtn.addEventListener('click', closeAuthModal);
+  if (authBackdrop) authBackdrop.addEventListener('click', closeAuthModal);
+
+  // Update user UI across header, reservation form, and mobile drawer
+  const updateAuthUI = (user) => {
+    currentUser = user;
+    const bookings = getSavedReservations();
+    const count = bookings.length;
+
+    if (user) {
+      const name = user.user_metadata?.full_name || user.email?.split('@')[0] || 'Member';
+      const initial = (name[0] || 'U').toUpperCase();
+
+      if (headerAuthBtn) {
+        headerAuthBtn.className = 'user-profile-pill';
+        headerAuthBtn.innerHTML = `
+          <div class="user-avatar-circle">${initial}</div>
+          <span class="user-name-short">${name}</span>
+          <svg class="user-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 12 15 18 9"></polyline></svg>
+        `;
+      }
+
+      if (userDisplayName) userDisplayName.textContent = name;
+      if (userDisplayEmail) userDisplayEmail.textContent = user.email || '';
+      if (userBookingsCount) userBookingsCount.textContent = count;
+
+      if (mobileAuthBtnLabel) mobileAuthBtnLabel.textContent = `Signed in: ${name}`;
+      if (mobileMyReservationsBtn) {
+        mobileMyReservationsBtn.style.display = 'block';
+        if (mobileBookingsCount) mobileBookingsCount.textContent = count;
+      }
+
+      // Pre-fill reservation form
+      if (resNameInput && !resNameInput.value) resNameInput.value = name;
+      if (resEmailInput && !resEmailInput.value) resEmailInput.value = user.email || '';
+      updateLiveTicket();
+    } else {
+      if (headerAuthBtn) {
+        headerAuthBtn.className = 'btn btn-auth';
+        headerAuthBtn.innerHTML = `
+          <svg class="auth-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"></path>
+            <circle cx="12" cy="7" r="4"></circle>
+          </svg>
+          <span id="auth-btn-label">Sign In</span>
+        `;
+      }
+      if (userMenuDropdown) userMenuDropdown.style.display = 'none';
+
+      if (mobileAuthBtnLabel) mobileAuthBtnLabel.textContent = 'Sign In / Account';
+      if (mobileMyReservationsBtn) mobileMyReservationsBtn.style.display = 'none';
+    }
+  };
+
+  // Header button click: toggles dropdown if logged in, opens auth modal if logged out
+  if (headerAuthBtn) {
+    headerAuthBtn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      if (currentUser) {
+        if (userMenuDropdown) {
+          const isShown = userMenuDropdown.style.display === 'block';
+          userMenuDropdown.style.display = isShown ? 'none' : 'block';
+          headerAuthBtn.classList.toggle('active', !isShown);
+        }
+      } else {
+        openAuthModal();
+      }
+    });
+  }
+
+  // Close dropdown on click outside
+  document.addEventListener('click', (e) => {
+    if (userMenuDropdown && userMenuDropdown.style.display === 'block') {
+      if (!userMenuDropdown.contains(e.target) && e.target !== headerAuthBtn) {
+        userMenuDropdown.style.display = 'none';
+        if (headerAuthBtn) headerAuthBtn.classList.remove('active');
+      }
+    }
+  });
+
+  if (mobileAuthBtn) {
+    mobileAuthBtn.addEventListener('click', () => {
+      if (mobileDrawer && mobileDrawer.classList.contains('open')) closeMobileNav();
+      if (currentUser) {
+        openUserReservationsModal();
+      } else {
+        openAuthModal();
+      }
+    });
+  }
+
+  // Check initial Auth Session
+  const checkInitialSession = async () => {
+    if (supabaseClient) {
+      try {
+        const { data: { session }, error } = await supabaseClient.auth.getSession();
+        if (session && session.user) {
+          updateAuthUI(session.user);
+          return;
+        }
+      } catch (e) {
+        console.warn('Supabase session fetch error:', e);
+      }
+
+      supabaseClient.auth.onAuthStateChange((event, session) => {
+        if (session && session.user) {
+          updateAuthUI(session.user);
+        } else {
+          updateAuthUI(null);
+        }
+      });
+    }
+
+    // Demo fallback session
+    try {
+      const demoUser = localStorage.getItem(DEMO_USER_KEY);
+      if (demoUser) {
+        updateAuthUI(JSON.parse(demoUser));
+      } else {
+        updateAuthUI(null);
+      }
+    } catch (e) {
+      updateAuthUI(null);
+    }
+  };
+  checkInitialSession();
+
+  // Sign In Form Submission
+  if (formSignin) {
+    formSignin.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      hideAuthAlert();
+
+      const emailInput = document.getElementById('signin-email');
+      const passwordInput = document.getElementById('signin-password');
+      const submitBtn = document.getElementById('signin-submit-btn');
+
+      const email = emailInput ? emailInput.value.trim() : '';
+      const password = passwordInput ? passwordInput.value : '';
+
+      if (!email || !isValidEmail(email)) {
+        showAuthAlert('Please enter a valid email address.');
+        return;
+      }
+      if (!password || password.length < 6) {
+        showAuthAlert('Please enter your password (minimum 6 characters).');
+        return;
+      }
+
+      if (submitBtn) {
+        submitBtn.disabled = true;
+        submitBtn.innerHTML = '<span>Signing in...</span>';
+      }
+
+      if (supabaseClient) {
+        try {
+          const { data, error } = await supabaseClient.auth.signInWithPassword({ email, password });
+          if (error) {
+            showAuthAlert(error.message || 'Invalid email or password.');
+          } else {
+            showAuthAlert('Signed in successfully! Welcome back.', 'success');
+            setTimeout(() => {
+              closeAuthModal();
+              formSignin.reset();
+            }, 800);
+          }
+        } catch (err) {
+          showAuthAlert(err.message || 'Connection error. Please try again.');
+        } finally {
+          if (submitBtn) {
+            submitBtn.disabled = false;
+            submitBtn.innerHTML = '<span>Sign In</span>';
+          }
+        }
+      } else {
+        // Demo Simulation Sign In
+        setTimeout(() => {
+          const demoUser = {
+            id: 'demo-user-' + Date.now(),
+            email: email,
+            user_metadata: { full_name: email.split('@')[0].replace('.', ' ') }
+          };
+          localStorage.setItem(DEMO_USER_KEY, JSON.stringify(demoUser));
+          updateAuthUI(demoUser);
+          showAuthAlert('Demo sign-in successful! (Connect Supabase for live accounts)', 'success');
+          setTimeout(() => {
+            closeAuthModal();
+            formSignin.reset();
+          }, 900);
+          if (submitBtn) {
+            submitBtn.disabled = false;
+            submitBtn.innerHTML = '<span>Sign In</span>';
+          }
+        }, 500);
+      }
+    });
+  }
+
+  // Sign Up Form Submission
+  if (formSignup) {
+    formSignup.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      hideAuthAlert();
+
+      const nameInput = document.getElementById('signup-name');
+      const emailInput = document.getElementById('signup-email');
+      const passwordInput = document.getElementById('signup-password');
+      const confirmInput = document.getElementById('signup-password-confirm');
+      const submitBtn = document.getElementById('signup-submit-btn');
+
+      const name = nameInput ? nameInput.value.trim() : '';
+      const email = emailInput ? emailInput.value.trim() : '';
+      const password = passwordInput ? passwordInput.value : '';
+      const confirm = confirmInput ? confirmInput.value : '';
+
+      if (!name || name.length < 2) {
+        showAuthAlert('Please enter your full name (at least 2 characters).');
+        return;
+      }
+      if (!email || !isValidEmail(email)) {
+        showAuthAlert('Please enter a valid email address.');
+        return;
+      }
+      if (!password || password.length < 6) {
+        showAuthAlert('Password must be at least 6 characters long.');
+        return;
+      }
+      if (password !== confirm) {
+        showAuthAlert('Passwords do not match. Please re-enter.');
+        return;
+      }
+
+      if (submitBtn) {
+        submitBtn.disabled = true;
+        submitBtn.innerHTML = '<span>Creating Account...</span>';
+      }
+
+      if (supabaseClient) {
+        try {
+          const { data, error } = await supabaseClient.auth.signUp({
+            email,
+            password,
+            options: {
+              data: { full_name: name }
+            }
+          });
+
+          if (error) {
+            showAuthAlert(error.message || 'Could not complete registration.');
+          } else {
+            showAuthAlert('Account created! Please check your email to confirm your account (or signed in).', 'success');
+            setTimeout(() => {
+              closeAuthModal();
+              formSignup.reset();
+            }, 1500);
+          }
+        } catch (err) {
+          showAuthAlert(err.message || 'Network error during registration.');
+        } finally {
+          if (submitBtn) {
+            submitBtn.disabled = false;
+            submitBtn.innerHTML = '<span>Create Account</span>';
+          }
+        }
+      } else {
+        // Demo Simulation Sign Up
+        setTimeout(() => {
+          const demoUser = {
+            id: 'demo-user-' + Date.now(),
+            email: email,
+            user_metadata: { full_name: name }
+          };
+          localStorage.setItem(DEMO_USER_KEY, JSON.stringify(demoUser));
+          updateAuthUI(demoUser);
+          showAuthAlert('Account created in Demo Mode! (Connect Supabase for live accounts)', 'success');
+          setTimeout(() => {
+            closeAuthModal();
+            formSignup.reset();
+          }, 900);
+          if (submitBtn) {
+            submitBtn.disabled = false;
+            submitBtn.innerHTML = '<span>Create Account</span>';
+          }
+        }, 500);
+      }
+    });
+  }
+
+  // Forgot Password Form Submission
+  if (formForgotPassword) {
+    formForgotPassword.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      hideAuthAlert();
+
+      const emailInput = document.getElementById('forgot-email');
+      const submitBtn = document.getElementById('forgot-submit-btn');
+      const email = emailInput ? emailInput.value.trim() : '';
+
+      if (!email || !isValidEmail(email)) {
+        showAuthAlert('Please enter your account email.');
+        return;
+      }
+
+      if (submitBtn) {
+        submitBtn.disabled = true;
+        submitBtn.innerHTML = '<span>Sending Link...</span>';
+      }
+
+      if (supabaseClient) {
+        try {
+          const { error } = await supabaseClient.auth.resetPasswordForEmail(email);
+          if (error) {
+            showAuthAlert(error.message || 'Could not send reset email.');
+          } else {
+            showAuthAlert('Password recovery link has been sent to your email.', 'success');
+            setTimeout(() => {
+              switchAuthTab('signin');
+            }, 2500);
+          }
+        } catch (err) {
+          showAuthAlert(err.message || 'Network error sending reset email.');
+        } finally {
+          if (submitBtn) {
+            submitBtn.disabled = false;
+            submitBtn.innerHTML = '<span>Send Recovery Email</span>';
+          }
+        }
+      } else {
+        setTimeout(() => {
+          showAuthAlert('Demo Mode: Reset link simulated for ' + email, 'success');
+          setTimeout(() => {
+            switchAuthTab('signin');
+          }, 1500);
+          if (submitBtn) {
+            submitBtn.disabled = false;
+            submitBtn.innerHTML = '<span>Send Recovery Email</span>';
+          }
+        }, 500);
+      }
+    });
+  }
+
+  // Sign Out Action
+  if (userSignoutBtn) {
+    userSignoutBtn.addEventListener('click', async () => {
+      if (userMenuDropdown) userMenuDropdown.style.display = 'none';
+
+      if (supabaseClient) {
+        try {
+          await supabaseClient.auth.signOut();
+        } catch (err) {
+          console.warn('Signout error:', err);
+        }
+      }
+      localStorage.removeItem(DEMO_USER_KEY);
+      updateAuthUI(null);
+    });
+  }
+
+  // =========================================================================
+  // 12. TABLE RESERVATIONS (SUPABASE POSTGRES + GOOGLE SHEETS + LOCAL STORAGE)
+  // =========================================================================
   const updateBookingsBar = () => {
     if (!existingBookingsBar || !existingBookingsText) return;
     const bookings = getSavedReservations();
     if (bookings.length > 0) {
       existingBookingsBar.style.display = 'flex';
       const lastBooking = bookings[0];
-      existingBookingsText.textContent = `You have ${bookings.length} demo booking${bookings.length > 1 ? 's' : ''} saved (Latest: ${lastBooking.name} for ${lastBooking.guests} on ${lastBooking.date}).`;
+      existingBookingsText.textContent = `You have ${bookings.length} saved booking${bookings.length > 1 ? 's' : ''} (Latest: ${lastBooking.name} for ${lastBooking.guests} on ${lastBooking.date}).`;
     } else {
       existingBookingsBar.style.display = 'none';
     }
@@ -741,12 +1309,13 @@ document.addEventListener('DOMContentLoaded', () => {
     clearBookingsBtn.addEventListener('click', () => {
       localStorage.removeItem(STORAGE_KEY);
       updateBookingsBar();
+      updateAuthUI(currentUser);
     });
   }
 
   // Reservation Form Submission
   if (reservationForm) {
-    reservationForm.addEventListener('submit', (e) => {
+    reservationForm.addEventListener('submit', async (e) => {
       e.preventDefault();
 
       let isValid = true;
@@ -830,30 +1399,85 @@ document.addEventListener('DOMContentLoaded', () => {
       });
 
       const refId = `BB-${Math.floor(10000 + Math.random() * 90000)}`;
+      const guestsInt = parseInt(guestsVal, 10) || 2;
+      const occasionVal = resOccasionInput ? resOccasionInput.value : 'Casual Dining';
+      const notesVal = resNotesInput ? resNotesInput.value.trim() : '';
 
       const bookingData = {
         refId,
+        booking_ref: refId,
         name: nameVal,
         email: emailVal,
         phone: phoneVal,
         date: formattedDate,
         rawDate: dateVal,
         time: timeVal,
-        guests: guestsVal,
-        occasion: resOccasionInput ? resOccasionInput.value : 'Casual Dining',
-        notes: resNotesInput ? resNotesInput.value.trim() : '',
+        guests: guestsInt,
+        occasion: occasionVal,
+        notes: notesVal,
+        status: 'confirmed',
         createdAt: new Date().toISOString()
       };
 
-      saveReservation(bookingData);
+      const resSubmitBtn = reservationForm.querySelector('button[type="submit"]');
+      if (resSubmitBtn) {
+        resSubmitBtn.disabled = true;
+        resSubmitBtn.textContent = 'Confirming Reservation...';
+      }
+
+      // 1. Supabase Postgres Insert
+      let savedToSupabase = false;
+      if (supabaseClient) {
+        try {
+          const supabasePayload = {
+            booking_ref: refId,
+            name: nameVal,
+            email: emailVal,
+            phone: phoneVal,
+            date: formattedDate,
+            time: timeVal,
+            guests: guestsInt,
+            occasion: occasionVal,
+            notes: notesVal,
+            status: 'confirmed'
+          };
+          if (currentUser && currentUser.id && !currentUser.id.startsWith('demo-')) {
+            supabasePayload.user_id = currentUser.id;
+          }
+
+          const { error } = await supabaseClient.from('reservations').insert([supabasePayload]);
+          if (!error) {
+            savedToSupabase = true;
+          } else {
+            console.warn('Supabase reservation insert note:', error.message);
+          }
+        } catch (dbErr) {
+          console.warn('Supabase DB connection error:', dbErr);
+        }
+      }
+
+      // 2. Google Sheets Backup Webhook
+      submitToGoogleSheets({
+        type: 'reservation',
+        ...bookingData
+      });
+
+      // 3. LocalStorage persistence (guarantees offline availability)
+      saveLocalReservation(bookingData);
       updateBookingsBar();
+      updateAuthUI(currentUser);
+
+      if (resSubmitBtn) {
+        resSubmitBtn.disabled = false;
+        resSubmitBtn.textContent = 'Confirm Reservation';
+      }
 
       // Populate Confirmation Modal
       if (modalRefId) modalRefId.textContent = bookingData.refId;
       if (modalGuestName) modalGuestName.textContent = bookingData.name;
       if (modalGuestDate) modalGuestDate.textContent = bookingData.date;
       if (modalGuestTime) modalGuestTime.textContent = bookingData.time;
-      if (modalGuestCount) modalGuestCount.textContent = bookingData.guests;
+      if (modalGuestCount) modalGuestCount.textContent = `${bookingData.guests} Guests`;
       if (modalGuestOccasion) modalGuestOccasion.textContent = bookingData.occasion;
 
       if (bookingData.notes) {
@@ -863,7 +1487,17 @@ document.addEventListener('DOMContentLoaded', () => {
         if (modalNotesRow) modalNotesRow.style.display = 'none';
       }
 
-      // Show Modal
+      // Update disclaimer on modal
+      const modalDisclaimer = confirmationModal ? confirmationModal.querySelector('.confirmation-disclaimer') : null;
+      if (modalDisclaimer) {
+        if (savedToSupabase) {
+          modalDisclaimer.innerHTML = '🟢 <strong>Saved to Supabase Cloud:</strong> Your reservation is recorded in our cloud database.';
+        } else {
+          modalDisclaimer.innerHTML = '* Demo Notice: Saved in browser local storage. Connect Supabase in Cloud Settings for live sync.';
+        }
+      }
+
+      // Show Confirmation Modal
       if (confirmationModal) {
         confirmationModal.style.display = 'flex';
         document.body.style.overflow = 'hidden';
@@ -887,6 +1521,10 @@ document.addEventListener('DOMContentLoaded', () => {
       if (reservationForm) {
         reservationForm.reset();
         setMinReservationDate();
+        if (currentUser) {
+          if (resNameInput) resNameInput.value = currentUser.user_metadata?.full_name || '';
+          if (resEmailInput) resEmailInput.value = currentUser.email || '';
+        }
         updateLiveTicket();
       }
       if (resNameInput) resNameInput.focus();
@@ -894,7 +1532,161 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 
   // =========================================================================
-  // 11. CONTACT & NEWSLETTER FORMS
+  // 13. USER RESERVATIONS MODAL ("MY RESERVATIONS")
+  // =========================================================================
+  const userReservationsModal = document.getElementById('user-reservations-modal');
+  const userReservationsBackdrop = document.getElementById('user-reservations-backdrop');
+  const userReservationsCloseBtn = document.getElementById('user-reservations-close-btn');
+  const userReservationsList = document.getElementById('user-reservations-list');
+  const closeMyReservationsActionBtn = document.getElementById('close-my-reservations-action-btn');
+  const reserveAnotherFromModalBtn = document.getElementById('reserve-another-from-modal-btn');
+
+  const openUserReservationsModal = async () => {
+    if (!userReservationsModal) return;
+    if (userMenuDropdown) userMenuDropdown.style.display = 'none';
+    if (headerAuthBtn) headerAuthBtn.classList.remove('active');
+
+    userReservationsModal.style.display = 'flex';
+    document.body.style.overflow = 'hidden';
+
+    renderUserReservations();
+  };
+
+  const closeUserReservationsModal = () => {
+    if (!userReservationsModal) return;
+    userReservationsModal.style.display = 'none';
+    document.body.style.overflow = '';
+  };
+
+  if (openMyReservationsBtn) openMyReservationsBtn.addEventListener('click', openUserReservationsModal);
+  if (mobileMyReservationsBtn) mobileMyReservationsBtn.addEventListener('click', () => {
+    if (mobileDrawer && mobileDrawer.classList.contains('open')) closeMobileNav();
+    openUserReservationsModal();
+  });
+  if (userReservationsCloseBtn) userReservationsCloseBtn.addEventListener('click', closeUserReservationsModal);
+  if (userReservationsBackdrop) userReservationsBackdrop.addEventListener('click', closeUserReservationsModal);
+  if (closeMyReservationsActionBtn) closeMyReservationsActionBtn.addEventListener('click', closeUserReservationsModal);
+
+  if (reserveAnotherFromModalBtn) {
+    reserveAnotherFromModalBtn.addEventListener('click', () => {
+      closeUserReservationsModal();
+    });
+  }
+
+  const renderUserReservations = async () => {
+    if (!userReservationsList) return;
+    userReservationsList.innerHTML = '<p style="text-align:center; padding:1.5rem; color:var(--color-charcoal-muted);">Loading your bookings...</p>';
+
+    let bookings = [];
+
+    // Try fetching from Supabase if connected
+    if (supabaseClient && currentUser && currentUser.email) {
+      try {
+        const { data, error } = await supabaseClient
+          .from('reservations')
+          .select('*')
+          .or(`email.eq.${currentUser.email}`)
+          .order('created_at', { ascending: false });
+
+        if (!error && Array.isArray(data) && data.length > 0) {
+          bookings = data.map(item => ({
+            id: item.id,
+            refId: item.booking_ref,
+            name: item.name,
+            email: item.email,
+            date: item.date,
+            time: item.time,
+            guests: item.guests,
+            occasion: item.occasion,
+            notes: item.notes,
+            status: item.status || 'confirmed'
+          }));
+        }
+      } catch (err) {
+        console.warn('Supabase bookings query error:', err);
+      }
+    }
+
+    // Fallback to local storage
+    if (bookings.length === 0) {
+      bookings = getSavedReservations();
+    }
+
+    if (bookings.length === 0) {
+      userReservationsList.innerHTML = `
+        <div class="empty-reservations">
+          <svg class="empty-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+            <rect x="3" y="4" width="18" height="18" rx="2" ry="2"></rect>
+            <line x1="16" y1="2" x2="16" y2="6"></line>
+            <line x1="8" y1="2" x2="8" y2="6"></line>
+            <line x1="3" y1="10" x2="21" y2="10"></line>
+          </svg>
+          <h4 style="font-family:var(--font-serif); font-size:1.15rem; color:var(--color-primary); margin-bottom:0.35rem;">No Active Bookings</h4>
+          <p style="font-size:0.875rem; color:var(--color-charcoal-muted); margin-bottom:1rem;">You don't have any table reservations saved yet.</p>
+        </div>
+      `;
+      return;
+    }
+
+    userReservationsList.innerHTML = bookings.map((item, idx) => `
+      <div class="reservation-record-card" data-ref="${item.refId || ''}">
+        <div class="record-card-top">
+          <span class="record-ref">${item.refId || 'BB-BOOKING'}</span>
+          <span class="record-status-tag ${item.status === 'cancelled' ? 'cancelled' : ''}">
+            ${item.status === 'cancelled' ? 'Cancelled' : 'Confirmed'}
+          </span>
+        </div>
+        <div class="record-meta-grid">
+          <div class="record-meta-item">📅 Date: <strong>${item.date}</strong></div>
+          <div class="record-meta-item">⏰ Time: <strong>${item.time}</strong></div>
+          <div class="record-meta-item">👥 Guests: <strong>${item.guests}</strong></div>
+          <div class="record-meta-item">✨ Occasion: <strong>${item.occasion || 'Casual Dining'}</strong></div>
+        </div>
+        ${item.notes ? `<p style="font-size:0.8rem; color:var(--color-charcoal-muted); margin-bottom:0.5rem;"><em>"${item.notes}"</em></p>` : ''}
+        ${item.status !== 'cancelled' ? `
+          <div class="record-actions">
+            <button type="button" class="btn-record-cancel" data-cancel-ref="${item.refId}" data-cancel-id="${item.id || ''}">Cancel Booking</button>
+          </div>
+        ` : ''}
+      </div>
+    `).join('');
+
+    // Attach cancel booking handlers
+    userReservationsList.querySelectorAll('.btn-record-cancel').forEach(btn => {
+      btn.addEventListener('click', async function () {
+        const ref = this.getAttribute('data-cancel-ref');
+        const dbId = this.getAttribute('data-cancel-id');
+
+        if (!confirm(`Are you sure you want to cancel reservation #${ref}?`)) {
+          return;
+        }
+
+        // Cancel in Supabase
+        if (supabaseClient && dbId) {
+          try {
+            await supabaseClient.from('reservations').update({ status: 'cancelled' }).eq('id', dbId);
+          } catch (err) {
+            console.warn('Supabase cancellation note:', err);
+          }
+        }
+
+        // Update in localStorage
+        try {
+          const current = getSavedReservations();
+          const updated = current.map(b => (b.refId === ref || b.booking_ref === ref) ? { ...b, status: 'cancelled' } : b);
+          localStorage.setItem(STORAGE_KEY, JSON.stringify(updated));
+        } catch (e) {
+          console.warn('LocalStorage cancel update error:', e);
+        }
+
+        renderUserReservations();
+        updateBookingsBar();
+      });
+    });
+  };
+
+  // =========================================================================
+  // 14. CONTACT & NEWSLETTER FORMS (GOOGLE SHEETS INTEGRATION)
   // =========================================================================
   const contactForm = document.getElementById('contact-form');
   const contactName = document.getElementById('contact-name');
@@ -904,34 +1696,40 @@ document.addEventListener('DOMContentLoaded', () => {
   const contactErrorEmail = document.getElementById('contact-error-email');
   const contactErrorMessage = document.getElementById('contact-error-message');
   const contactSuccessAlert = document.getElementById('contact-success-alert');
+  const contactSuccessDesc = document.getElementById('contact-success-desc');
+  const contactSubmitBtn = document.getElementById('contact-submit-btn');
 
   if (contactName) contactName.addEventListener('input', () => clearError(contactName, contactErrorName));
   if (contactEmail) contactEmail.addEventListener('input', () => clearError(contactEmail, contactErrorEmail));
   if (contactMessage) contactMessage.addEventListener('input', () => clearError(contactMessage, contactErrorMessage));
 
   if (contactForm) {
-    contactForm.addEventListener('submit', (e) => {
+    contactForm.addEventListener('submit', async (e) => {
       e.preventDefault();
       let isValid = true;
 
-      if (!contactName.value.trim() || contactName.value.trim().length < 2) {
+      const nameVal = contactName ? contactName.value.trim() : '';
+      const emailVal = contactEmail ? contactEmail.value.trim() : '';
+      const messageVal = contactMessage ? contactMessage.value.trim() : '';
+
+      if (!nameVal || nameVal.length < 2) {
         setError(contactName, contactErrorName, 'Please enter your name.');
         isValid = false;
       } else {
         clearError(contactName, contactErrorName);
       }
 
-      if (!contactEmail.value.trim()) {
+      if (!emailVal) {
         setError(contactEmail, contactErrorEmail, 'Please enter your email.');
         isValid = false;
-      } else if (!isValidEmail(contactEmail.value.trim())) {
+      } else if (!isValidEmail(emailVal)) {
         setError(contactEmail, contactErrorEmail, 'Please enter a valid email address.');
         isValid = false;
       } else {
         clearError(contactEmail, contactErrorEmail);
       }
 
-      if (!contactMessage.value.trim() || contactMessage.value.trim().length < 5) {
+      if (!messageVal || messageVal.length < 5) {
         setError(contactMessage, contactErrorMessage, 'Please enter a message (at least 5 characters).');
         isValid = false;
       } else {
@@ -940,18 +1738,57 @@ document.addEventListener('DOMContentLoaded', () => {
 
       if (!isValid) return;
 
+      if (contactSubmitBtn) {
+        contactSubmitBtn.disabled = true;
+        contactSubmitBtn.textContent = 'Sending Message...';
+      }
+
+      const payload = {
+        type: 'contact',
+        name: nameVal,
+        email: emailVal,
+        message: messageVal,
+        timestamp: new Date().toISOString()
+      };
+
+      // 1. Submit to Google Sheets Webhook
+      const sheetsResult = await submitToGoogleSheets(payload);
+
+      // 2. Optional Supabase Contact insert
+      if (supabaseClient) {
+        try {
+          await supabaseClient.from('contacts').insert([
+            { name: nameVal, email: emailVal, message: messageVal }
+          ]);
+        } catch (dbErr) {
+          // Schema contacts table is optional
+        }
+      }
+
+      if (contactSubmitBtn) {
+        contactSubmitBtn.disabled = false;
+        contactSubmitBtn.textContent = 'Send Message →';
+      }
+
       if (contactSuccessAlert) {
+        if (contactSuccessDesc) {
+          if (sheetsResult.success) {
+            contactSuccessDesc.textContent = 'Thank you! Your message has been saved to our Google Sheet and delivered to the restaurant concierge.';
+          } else {
+            contactSuccessDesc.textContent = 'Thank you for reaching out! Your message was received. (Connect Google Sheets in Cloud Settings for live sheet appending).';
+          }
+        }
         contactSuccessAlert.style.display = 'flex';
       }
       contactForm.reset();
 
       setTimeout(() => {
         if (contactSuccessAlert) contactSuccessAlert.style.display = 'none';
-      }, 8000);
+      }, 9000);
     });
   }
 
-  // Newsletter
+  // Newsletter Form
   const newsletterForm = document.getElementById('newsletter-form');
   const newsletterEmail = document.getElementById('newsletter-email');
   const newsletterError = document.getElementById('newsletter-error');
@@ -965,7 +1802,7 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 
   if (newsletterForm) {
-    newsletterForm.addEventListener('submit', (e) => {
+    newsletterForm.addEventListener('submit', async (e) => {
       e.preventDefault();
       const email = newsletterEmail.value.trim();
 
@@ -977,6 +1814,33 @@ document.addEventListener('DOMContentLoaded', () => {
 
       if (newsletterError) newsletterError.textContent = '';
       newsletterEmail.classList.remove('is-invalid');
+
+      const submitBtn = newsletterForm.querySelector('button[type="submit"]');
+      if (submitBtn) {
+        submitBtn.disabled = true;
+        submitBtn.textContent = 'Subscribing...';
+      }
+
+      // Submit to Google Sheets Webhook
+      await submitToGoogleSheets({
+        type: 'newsletter',
+        email: email,
+        timestamp: new Date().toISOString()
+      });
+
+      // Optional Supabase Newsletter insert
+      if (supabaseClient) {
+        try {
+          await supabaseClient.from('newsletter_subscribers').insert([{ email }]);
+        } catch (e) {
+          // Ignore unique constraints
+        }
+      }
+
+      if (submitBtn) {
+        submitBtn.disabled = false;
+        submitBtn.textContent = 'Subscribe';
+      }
 
       if (newsletterSuccessAlert) {
         newsletterSuccessAlert.style.display = 'flex';
@@ -990,7 +1854,100 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 
   // =========================================================================
-  // 12. TASTING MENU MODAL
+  // 15. CLOUD & API SETTINGS MODAL
+  // =========================================================================
+  const cloudSettingsModal = document.getElementById('cloud-settings-modal');
+  const cloudSettingsBackdrop = document.getElementById('cloud-settings-backdrop');
+  const cloudSettingsCloseBtn = document.getElementById('cloud-settings-close-btn');
+  const footerCloudSettingsBtn = document.getElementById('footer-cloud-settings-btn');
+  const mobileCloudSettingsBtn = document.getElementById('mobile-cloud-settings-btn');
+
+  const cfgSupabaseUrl = document.getElementById('cfg-supabase-url');
+  const cfgSupabaseKey = document.getElementById('cfg-supabase-key');
+  const cfgSheetsUrl = document.getElementById('cfg-sheets-url');
+  const saveCloudConfigBtn = document.getElementById('save-cloud-config-btn');
+  const resetCloudConfigBtn = document.getElementById('reset-cloud-config-btn');
+  const settingsAlert = document.getElementById('settings-alert');
+  const settingsAlertMsg = document.getElementById('settings-alert-message');
+
+  const showSettingsAlert = (msg, type = 'success') => {
+    if (!settingsAlert || !settingsAlertMsg) return;
+    settingsAlert.className = `form-notification ${type}`;
+    settingsAlertMsg.textContent = msg;
+    settingsAlert.style.display = 'flex';
+  };
+
+  const openCloudSettingsModal = () => {
+    if (!cloudSettingsModal) return;
+    if (userMenuDropdown) userMenuDropdown.style.display = 'none';
+    if (headerAuthBtn) headerAuthBtn.classList.remove('active');
+
+    // Populate active values
+    if (cfgSupabaseUrl) cfgSupabaseUrl.value = window.ENV_CONFIG.SUPABASE_URL || '';
+    if (cfgSupabaseKey) cfgSupabaseKey.value = window.ENV_CONFIG.SUPABASE_ANON_KEY || '';
+    if (cfgSheetsUrl) cfgSheetsUrl.value = window.ENV_CONFIG.GOOGLE_SHEET_WEBHOOK_URL || '';
+
+    refreshCloudStatusUI();
+    if (settingsAlert) settingsAlert.style.display = 'none';
+
+    cloudSettingsModal.style.display = 'flex';
+    document.body.style.overflow = 'hidden';
+  };
+
+  const closeCloudSettingsModal = () => {
+    if (!cloudSettingsModal) return;
+    cloudSettingsModal.style.display = 'none';
+    document.body.style.overflow = '';
+  };
+
+  if (openCloudSettingsBtn) openCloudSettingsBtn.addEventListener('click', openCloudSettingsModal);
+  if (footerCloudSettingsBtn) footerCloudSettingsBtn.addEventListener('click', openCloudSettingsModal);
+  if (mobileCloudSettingsBtn) {
+    mobileCloudSettingsBtn.addEventListener('click', () => {
+      if (mobileDrawer && mobileDrawer.classList.contains('open')) closeMobileNav();
+      openCloudSettingsModal();
+    });
+  }
+  if (cloudSettingsCloseBtn) cloudSettingsCloseBtn.addEventListener('click', closeCloudSettingsModal);
+  if (cloudSettingsBackdrop) cloudSettingsBackdrop.addEventListener('click', closeCloudSettingsModal);
+
+  if (saveCloudConfigBtn) {
+    saveCloudConfigBtn.addEventListener('click', () => {
+      const newConfig = {
+        SUPABASE_URL: cfgSupabaseUrl ? cfgSupabaseUrl.value.trim() : '',
+        SUPABASE_ANON_KEY: cfgSupabaseKey ? cfgSupabaseKey.value.trim() : '',
+        GOOGLE_SHEET_WEBHOOK_URL: cfgSheetsUrl ? cfgSheetsUrl.value.trim() : ''
+      };
+
+      window.ENV_CONFIG.saveOverrides(newConfig);
+      initSupabaseClient();
+      refreshCloudStatusUI();
+      checkInitialSession();
+
+      showSettingsAlert('Cloud configuration saved! Integrations updated.', 'success');
+      setTimeout(() => {
+        closeCloudSettingsModal();
+      }, 1200);
+    });
+  }
+
+  if (resetCloudConfigBtn) {
+    resetCloudConfigBtn.addEventListener('click', () => {
+      window.ENV_CONFIG.resetOverrides();
+      if (cfgSupabaseUrl) cfgSupabaseUrl.value = '';
+      if (cfgSupabaseKey) cfgSupabaseKey.value = '';
+      if (cfgSheetsUrl) cfgSheetsUrl.value = '';
+
+      initSupabaseClient();
+      refreshCloudStatusUI();
+      checkInitialSession();
+
+      showSettingsAlert('Reset to demo defaults.', 'success');
+    });
+  }
+
+  // =========================================================================
+  // 16. TASTING MENU MODAL
   // =========================================================================
   const viewTastingMenuBtn = document.getElementById('view-tasting-menu-btn');
   const tastingModal = document.getElementById('tasting-modal');
@@ -1027,7 +1984,7 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 
   // =========================================================================
-  // 13. GLOBAL KEYBOARD ACCESSIBILITY
+  // 17. GLOBAL KEYBOARD ACCESSIBILITY
   // =========================================================================
   document.addEventListener('keydown', (e) => {
     if (e.key === 'Escape') {
@@ -1035,6 +1992,10 @@ document.addEventListener('DOMContentLoaded', () => {
       if (lightboxModal && lightboxModal.style.display === 'flex') closeLightbox();
       if (confirmationModal && confirmationModal.style.display === 'flex') closeConfirmationModal();
       if (tastingModal && tastingModal.style.display === 'flex') closeTastingModal();
+      if (authModal && authModal.style.display === 'flex') closeAuthModal();
+      if (userReservationsModal && userReservationsModal.style.display === 'flex') closeUserReservationsModal();
+      if (cloudSettingsModal && cloudSettingsModal.style.display === 'flex') closeCloudSettingsModal();
+      if (userMenuDropdown) userMenuDropdown.style.display = 'none';
     }
 
     if (lightboxModal && lightboxModal.style.display === 'flex') {
