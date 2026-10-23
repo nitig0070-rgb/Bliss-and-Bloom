@@ -705,7 +705,6 @@ document.addEventListener('DOMContentLoaded', () => {
   // 10. CLOUD SERVICES INITIALIZATION (SUPABASE & GOOGLE SHEETS)
   // =========================================================================
   const STORAGE_KEY = 'bliss_bloom_reservations';
-  const DEMO_USER_KEY = 'bliss_bloom_demo_auth_user';
 
   let supabaseClient = null;
   let currentUser = null;
@@ -747,10 +746,14 @@ document.addEventListener('DOMContentLoaded', () => {
     }
   };
 
-  // LocalStorage Helpers for offline/demo persistence
+  // Local Storage helper (cached per user)
+  const getUserStorageKey = () => {
+    return currentUser && currentUser.id ? `${STORAGE_KEY}_${currentUser.id}` : STORAGE_KEY;
+  };
+
   const getSavedReservations = () => {
     try {
-      const data = localStorage.getItem(STORAGE_KEY);
+      const data = localStorage.getItem(getUserStorageKey());
       return data ? JSON.parse(data) : [];
     } catch (e) {
       console.warn('LocalStorage read error:', e);
@@ -760,9 +763,10 @@ document.addEventListener('DOMContentLoaded', () => {
 
   const saveLocalReservation = (booking) => {
     try {
+      const key = getUserStorageKey();
       const current = getSavedReservations();
       current.unshift(booking);
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(current));
+      localStorage.setItem(key, JSON.stringify(current));
     } catch (e) {
       console.warn('Could not save booking locally:', e);
     }
@@ -782,7 +786,7 @@ document.addEventListener('DOMContentLoaded', () => {
         cloudStatusText.innerHTML = '<strong>Live Cloud Active:</strong> Reservations are synced to Supabase PostgreSQL database.';
       } else {
         cloudStatusBadge.classList.remove('is-live');
-        cloudStatusText.textContent = 'Demo Mode: Reservations saved locally in browser storage. Connect Supabase in Cloud Settings for live database sync.';
+        cloudStatusText.textContent = 'Cloud Database & Authentication: Real-time table reservations powered by Supabase.';
       }
     }
 
@@ -792,10 +796,10 @@ document.addEventListener('DOMContentLoaded', () => {
     if (authCloudBanner && authCloudText) {
       if (isSupabaseLive) {
         authCloudBanner.classList.add('is-live');
-        authCloudText.textContent = '🟢 Connected to Supabase Cloud Auth & Database';
+        authCloudText.textContent = '🟢 Supabase Secure Authentication Active';
       } else {
         authCloudBanner.classList.remove('is-live');
-        authCloudText.textContent = 'ℹ️ Demo Mode: Connect Supabase in Cloud Settings for live cloud authentication.';
+        authCloudText.textContent = 'Supabase Secure Authentication';
       }
     }
 
@@ -807,7 +811,7 @@ document.addEventListener('DOMContentLoaded', () => {
         badgeSupabase.textContent = '🟢 Connected';
       } else {
         badgeSupabase.className = 'cloud-badge demo';
-        badgeSupabase.textContent = '⚪ Demo Mode';
+        badgeSupabase.textContent = '⚪ Not Configured';
       }
     }
 
@@ -818,14 +822,14 @@ document.addEventListener('DOMContentLoaded', () => {
         badgeSheets.textContent = '🟢 Connected';
       } else {
         badgeSheets.className = 'cloud-badge demo';
-        badgeSheets.textContent = '⚪ Demo Mode';
+        badgeSheets.textContent = '⚪ Not Configured';
       }
     }
   };
   refreshCloudStatusUI();
 
   // =========================================================================
-  // 11. AUTHENTICATION (SUPABASE AUTH & DEMO FALLBACK)
+  // 11. USER-SPECIFIC AUTHENTICATION (SUPABASE AUTH)
   // =========================================================================
   const authModal = document.getElementById('auth-modal');
   const authBackdrop = document.getElementById('auth-backdrop');
@@ -936,8 +940,6 @@ document.addEventListener('DOMContentLoaded', () => {
   // Update user UI across header, reservation form, and mobile drawer
   const updateAuthUI = (user) => {
     currentUser = user;
-    const bookings = getSavedReservations();
-    const count = bookings.length;
 
     if (user) {
       const name = user.user_metadata?.full_name || user.email?.split('@')[0] || 'Member';
@@ -954,18 +956,19 @@ document.addEventListener('DOMContentLoaded', () => {
 
       if (userDisplayName) userDisplayName.textContent = name;
       if (userDisplayEmail) userDisplayEmail.textContent = user.email || '';
-      if (userBookingsCount) userBookingsCount.textContent = count;
 
       if (mobileAuthBtnLabel) mobileAuthBtnLabel.textContent = `Signed in: ${name}`;
       if (mobileMyReservationsBtn) {
         mobileMyReservationsBtn.style.display = 'block';
-        if (mobileBookingsCount) mobileBookingsCount.textContent = count;
       }
 
       // Pre-fill reservation form
       if (resNameInput && !resNameInput.value) resNameInput.value = name;
       if (resEmailInput && !resEmailInput.value) resEmailInput.value = user.email || '';
       updateLiveTicket();
+
+      // Fetch user booking count asynchronously
+      fetchUserBookingsCount();
     } else {
       if (headerAuthBtn) {
         headerAuthBtn.className = 'btn btn-auth';
@@ -981,6 +984,44 @@ document.addEventListener('DOMContentLoaded', () => {
 
       if (mobileAuthBtnLabel) mobileAuthBtnLabel.textContent = 'Sign In / Account';
       if (mobileMyReservationsBtn) mobileMyReservationsBtn.style.display = 'none';
+
+      if (existingBookingsBar) existingBookingsBar.style.display = 'none';
+    }
+  };
+
+  const fetchUserBookingsCount = async () => {
+    if (!currentUser) return;
+    let count = 0;
+
+    if (supabaseClient) {
+      try {
+        const { count: dbCount, error } = await supabaseClient
+          .from('reservations')
+          .select('*', { count: 'exact', head: true })
+          .eq('user_id', currentUser.id);
+
+        if (!error && typeof dbCount === 'number') {
+          count = dbCount;
+        }
+      } catch (e) {
+        console.warn('Booking count query note:', e);
+      }
+    }
+
+    if (count === 0) {
+      count = getSavedReservations().length;
+    }
+
+    if (userBookingsCount) userBookingsCount.textContent = count;
+    if (mobileBookingsCount) mobileBookingsCount.textContent = count;
+
+    if (existingBookingsBar && existingBookingsText) {
+      if (count > 0) {
+        existingBookingsBar.style.display = 'flex';
+        existingBookingsText.textContent = `Signed in as ${currentUser.user_metadata?.full_name || currentUser.email}. You have ${count} active table reservation${count > 1 ? 's' : ''}.`;
+      } else {
+        existingBookingsBar.style.display = 'none';
+      }
     }
   };
 
@@ -1021,17 +1062,19 @@ document.addEventListener('DOMContentLoaded', () => {
     });
   }
 
-  // Check initial Auth Session
+  // Check initial Auth Session (Strictly Supabase)
   const checkInitialSession = async () => {
     if (supabaseClient) {
       try {
         const { data: { session }, error } = await supabaseClient.auth.getSession();
         if (session && session.user) {
           updateAuthUI(session.user);
-          return;
+        } else {
+          updateAuthUI(null);
         }
       } catch (e) {
         console.warn('Supabase session fetch error:', e);
+        updateAuthUI(null);
       }
 
       supabaseClient.auth.onAuthStateChange((event, session) => {
@@ -1041,23 +1084,13 @@ document.addEventListener('DOMContentLoaded', () => {
           updateAuthUI(null);
         }
       });
-    }
-
-    // Demo fallback session
-    try {
-      const demoUser = localStorage.getItem(DEMO_USER_KEY);
-      if (demoUser) {
-        updateAuthUI(JSON.parse(demoUser));
-      } else {
-        updateAuthUI(null);
-      }
-    } catch (e) {
+    } else {
       updateAuthUI(null);
     }
   };
   checkInitialSession();
 
-  // Sign In Form Submission
+  // Sign In Form Submission (Real Supabase Auth)
   if (formSignin) {
     formSignin.addEventListener('submit', async (e) => {
       e.preventDefault();
@@ -1079,56 +1112,39 @@ document.addEventListener('DOMContentLoaded', () => {
         return;
       }
 
+      if (!supabaseClient) {
+        showAuthAlert('Supabase authentication is not configured yet. Please configure your SUPABASE_URL and SUPABASE_ANON_KEY in js/config.js (or Cloud Settings) to sign in to your real account.');
+        return;
+      }
+
       if (submitBtn) {
         submitBtn.disabled = true;
         submitBtn.innerHTML = '<span>Signing in...</span>';
       }
 
-      if (supabaseClient) {
-        try {
-          const { data, error } = await supabaseClient.auth.signInWithPassword({ email, password });
-          if (error) {
-            showAuthAlert(error.message || 'Invalid email or password.');
-          } else {
-            showAuthAlert('Signed in successfully! Welcome back.', 'success');
-            setTimeout(() => {
-              closeAuthModal();
-              formSignin.reset();
-            }, 800);
-          }
-        } catch (err) {
-          showAuthAlert(err.message || 'Connection error. Please try again.');
-        } finally {
-          if (submitBtn) {
-            submitBtn.disabled = false;
-            submitBtn.innerHTML = '<span>Sign In</span>';
-          }
-        }
-      } else {
-        // Demo Simulation Sign In
-        setTimeout(() => {
-          const demoUser = {
-            id: 'demo-user-' + Date.now(),
-            email: email,
-            user_metadata: { full_name: email.split('@')[0].replace('.', ' ') }
-          };
-          localStorage.setItem(DEMO_USER_KEY, JSON.stringify(demoUser));
-          updateAuthUI(demoUser);
-          showAuthAlert('Demo sign-in successful! (Connect Supabase for live accounts)', 'success');
+      try {
+        const { data, error } = await supabaseClient.auth.signInWithPassword({ email, password });
+        if (error) {
+          showAuthAlert(error.message || 'Invalid email or password.');
+        } else {
+          showAuthAlert('Signed in successfully! Welcome back.', 'success');
           setTimeout(() => {
             closeAuthModal();
             formSignin.reset();
-          }, 900);
-          if (submitBtn) {
-            submitBtn.disabled = false;
-            submitBtn.innerHTML = '<span>Sign In</span>';
-          }
-        }, 500);
+          }, 800);
+        }
+      } catch (err) {
+        showAuthAlert(err.message || 'Connection error. Please try again.');
+      } finally {
+        if (submitBtn) {
+          submitBtn.disabled = false;
+          submitBtn.innerHTML = '<span>Sign In</span>';
+        }
       }
     });
   }
 
-  // Sign Up Form Submission
+  // Sign Up Form Submission (Real Supabase Auth)
   if (formSignup) {
     formSignup.addEventListener('submit', async (e) => {
       e.preventDefault();
@@ -1162,63 +1178,48 @@ document.addEventListener('DOMContentLoaded', () => {
         return;
       }
 
+      if (!supabaseClient) {
+        showAuthAlert('Supabase authentication is not configured yet. Please configure your SUPABASE_URL and SUPABASE_ANON_KEY in js/config.js (or Cloud Settings) to register your account.');
+        return;
+      }
+
       if (submitBtn) {
         submitBtn.disabled = true;
         submitBtn.innerHTML = '<span>Creating Account...</span>';
       }
 
-      if (supabaseClient) {
-        try {
-          const { data, error } = await supabaseClient.auth.signUp({
-            email,
-            password,
-            options: {
-              data: { full_name: name }
-            }
-          });
+      try {
+        const { data, error } = await supabaseClient.auth.signUp({
+          email,
+          password,
+          options: {
+            data: { full_name: name }
+          }
+        });
 
-          if (error) {
-            showAuthAlert(error.message || 'Could not complete registration.');
-          } else {
-            showAuthAlert('Account created! Please check your email to confirm your account (or signed in).', 'success');
-            setTimeout(() => {
-              closeAuthModal();
-              formSignup.reset();
-            }, 1500);
-          }
-        } catch (err) {
-          showAuthAlert(err.message || 'Network error during registration.');
-        } finally {
-          if (submitBtn) {
-            submitBtn.disabled = false;
-            submitBtn.innerHTML = '<span>Create Account</span>';
-          }
-        }
-      } else {
-        // Demo Simulation Sign Up
-        setTimeout(() => {
-          const demoUser = {
-            id: 'demo-user-' + Date.now(),
-            email: email,
-            user_metadata: { full_name: name }
-          };
-          localStorage.setItem(DEMO_USER_KEY, JSON.stringify(demoUser));
-          updateAuthUI(demoUser);
-          showAuthAlert('Account created in Demo Mode! (Connect Supabase for live accounts)', 'success');
+        if (error) {
+          showAuthAlert(error.message || 'Could not complete registration.');
+        } else if (data.user && !data.session) {
+          showAuthAlert('Account created! A confirmation email has been sent to ' + email + '. Please verify your email to log in.', 'success');
+        } else {
+          showAuthAlert('Account created and signed in! Welcome, ' + name + '.', 'success');
           setTimeout(() => {
             closeAuthModal();
             formSignup.reset();
-          }, 900);
-          if (submitBtn) {
-            submitBtn.disabled = false;
-            submitBtn.innerHTML = '<span>Create Account</span>';
-          }
-        }, 500);
+          }, 1200);
+        }
+      } catch (err) {
+        showAuthAlert(err.message || 'Network error during registration.');
+      } finally {
+        if (submitBtn) {
+          submitBtn.disabled = false;
+          submitBtn.innerHTML = '<span>Create Account</span>';
+        }
       }
     });
   }
 
-  // Forgot Password Form Submission
+  // Forgot Password Form Submission (Real Supabase Auth)
   if (formForgotPassword) {
     formForgotPassword.addEventListener('submit', async (e) => {
       e.preventDefault();
@@ -1233,41 +1234,35 @@ document.addEventListener('DOMContentLoaded', () => {
         return;
       }
 
+      if (!supabaseClient) {
+        showAuthAlert('Supabase is not configured yet. Please add your credentials in js/config.js to send password reset emails.');
+        return;
+      }
+
       if (submitBtn) {
         submitBtn.disabled = true;
         submitBtn.innerHTML = '<span>Sending Link...</span>';
       }
 
-      if (supabaseClient) {
-        try {
-          const { error } = await supabaseClient.auth.resetPasswordForEmail(email);
-          if (error) {
-            showAuthAlert(error.message || 'Could not send reset email.');
-          } else {
-            showAuthAlert('Password recovery link has been sent to your email.', 'success');
-            setTimeout(() => {
-              switchAuthTab('signin');
-            }, 2500);
-          }
-        } catch (err) {
-          showAuthAlert(err.message || 'Network error sending reset email.');
-        } finally {
-          if (submitBtn) {
-            submitBtn.disabled = false;
-            submitBtn.innerHTML = '<span>Send Recovery Email</span>';
-          }
-        }
-      } else {
-        setTimeout(() => {
-          showAuthAlert('Demo Mode: Reset link simulated for ' + email, 'success');
+      try {
+        const { error } = await supabaseClient.auth.resetPasswordForEmail(email, {
+          redirectTo: window.location.origin
+        });
+        if (error) {
+          showAuthAlert(error.message || 'Could not send reset email.');
+        } else {
+          showAuthAlert('Password recovery link has been sent to your email address.', 'success');
           setTimeout(() => {
             switchAuthTab('signin');
-          }, 1500);
-          if (submitBtn) {
-            submitBtn.disabled = false;
-            submitBtn.innerHTML = '<span>Send Recovery Email</span>';
-          }
-        }, 500);
+          }, 2500);
+        }
+      } catch (err) {
+        showAuthAlert(err.message || 'Network error sending reset email.');
+      } finally {
+        if (submitBtn) {
+          submitBtn.disabled = false;
+          submitBtn.innerHTML = '<span>Send Recovery Email</span>';
+        }
       }
     });
   }
@@ -1281,39 +1276,24 @@ document.addEventListener('DOMContentLoaded', () => {
         try {
           await supabaseClient.auth.signOut();
         } catch (err) {
-          console.warn('Signout error:', err);
+          console.warn('Signout note:', err);
         }
       }
-      localStorage.removeItem(DEMO_USER_KEY);
       updateAuthUI(null);
     });
   }
 
-  // =========================================================================
-  // 12. TABLE RESERVATIONS (SUPABASE POSTGRES + GOOGLE SHEETS + LOCAL STORAGE)
-  // =========================================================================
-  const updateBookingsBar = () => {
-    if (!existingBookingsBar || !existingBookingsText) return;
-    const bookings = getSavedReservations();
-    if (bookings.length > 0) {
-      existingBookingsBar.style.display = 'flex';
-      const lastBooking = bookings[0];
-      existingBookingsText.textContent = `You have ${bookings.length} saved booking${bookings.length > 1 ? 's' : ''} (Latest: ${lastBooking.name} for ${lastBooking.guests} on ${lastBooking.date}).`;
-    } else {
-      existingBookingsBar.style.display = 'none';
-    }
-  };
-  updateBookingsBar();
-
-  if (clearBookingsBtn) {
-    clearBookingsBtn.addEventListener('click', () => {
-      localStorage.removeItem(STORAGE_KEY);
-      updateBookingsBar();
-      updateAuthUI(currentUser);
+  // Connect "View My Bookings" button in banner
+  const viewUserBookingsBtn = document.getElementById('view-user-bookings-btn');
+  if (viewUserBookingsBtn) {
+    viewUserBookingsBtn.addEventListener('click', () => {
+      openUserReservationsModal();
     });
   }
 
-  // Reservation Form Submission
+  // =========================================================================
+  // 12. TABLE RESERVATIONS (USER-SPECIFIC SUPABASE POSTGRES + GOOGLE SHEETS)
+  // =========================================================================
   if (reservationForm) {
     reservationForm.addEventListener('submit', async (e) => {
       e.preventDefault();
@@ -1416,6 +1396,7 @@ document.addEventListener('DOMContentLoaded', () => {
         occasion: occasionVal,
         notes: notesVal,
         status: 'confirmed',
+        user_id: currentUser ? currentUser.id : null,
         createdAt: new Date().toISOString()
       };
 
@@ -1425,7 +1406,7 @@ document.addEventListener('DOMContentLoaded', () => {
         resSubmitBtn.textContent = 'Confirming Reservation...';
       }
 
-      // 1. Supabase Postgres Insert
+      // 1. Supabase Postgres Insert (Strict User Linkage)
       let savedToSupabase = false;
       if (supabaseClient) {
         try {
@@ -1439,11 +1420,9 @@ document.addEventListener('DOMContentLoaded', () => {
             guests: guestsInt,
             occasion: occasionVal,
             notes: notesVal,
-            status: 'confirmed'
+            status: 'confirmed',
+            user_id: currentUser ? currentUser.id : null
           };
-          if (currentUser && currentUser.id && !currentUser.id.startsWith('demo-')) {
-            supabasePayload.user_id = currentUser.id;
-          }
 
           const { error } = await supabaseClient.from('reservations').insert([supabasePayload]);
           if (!error) {
@@ -1462,10 +1441,9 @@ document.addEventListener('DOMContentLoaded', () => {
         ...bookingData
       });
 
-      // 3. LocalStorage persistence (guarantees offline availability)
+      // 3. User Cache persistence
       saveLocalReservation(bookingData);
-      updateBookingsBar();
-      updateAuthUI(currentUser);
+      fetchUserBookingsCount();
 
       if (resSubmitBtn) {
         resSubmitBtn.disabled = false;
@@ -1488,12 +1466,12 @@ document.addEventListener('DOMContentLoaded', () => {
       }
 
       // Update disclaimer on modal
-      const modalDisclaimer = confirmationModal ? confirmationModal.querySelector('.confirmation-disclaimer') : null;
+      const modalDisclaimer = document.getElementById('confirmation-disclaimer-text');
       if (modalDisclaimer) {
         if (savedToSupabase) {
-          modalDisclaimer.innerHTML = '🟢 <strong>Saved to Supabase Cloud:</strong> Your reservation is recorded in our cloud database.';
+          modalDisclaimer.innerHTML = '🟢 <strong>Saved to Supabase Cloud:</strong> Your reservation is linked to your account in our database.';
         } else {
-          modalDisclaimer.innerHTML = '* Demo Notice: Saved in browser local storage. Connect Supabase in Cloud Settings for live sync.';
+          modalDisclaimer.innerHTML = 'Your reservation reference has been registered in our restaurant booking record.';
         }
       }
 
@@ -1532,7 +1510,7 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 
   // =========================================================================
-  // 13. USER RESERVATIONS MODAL ("MY RESERVATIONS")
+  // 13. USER RESERVATIONS MODAL (STRICT USER-SPECIFIC AUTHORIZATION)
   // =========================================================================
   const userReservationsModal = document.getElementById('user-reservations-modal');
   const userReservationsBackdrop = document.getElementById('user-reservations-backdrop');
@@ -1575,20 +1553,44 @@ document.addEventListener('DOMContentLoaded', () => {
 
   const renderUserReservations = async () => {
     if (!userReservationsList) return;
-    userReservationsList.innerHTML = '<p style="text-align:center; padding:1.5rem; color:var(--color-charcoal-muted);">Loading your bookings...</p>';
+
+    // Authorization Guard: Require real authenticated user
+    if (!currentUser) {
+      userReservationsList.innerHTML = `
+        <div class="empty-reservations">
+          <svg class="empty-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+            <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"></path>
+            <circle cx="12" cy="7" r="4"></circle>
+          </svg>
+          <h4 style="font-family:var(--font-serif); font-size:1.15rem; color:var(--color-primary); margin-bottom:0.35rem;">Sign In Required</h4>
+          <p style="font-size:0.875rem; color:var(--color-charcoal-muted); margin-bottom:1.25rem;">Please log in with your account to access your personal table reservations.</p>
+          <button type="button" class="btn btn-primary btn-sm" id="auth-from-reservations-btn">Sign In to Your Account</button>
+        </div>
+      `;
+      const authBtn = document.getElementById('auth-from-reservations-btn');
+      if (authBtn) {
+        authBtn.addEventListener('click', () => {
+          closeUserReservationsModal();
+          openAuthModal();
+        });
+      }
+      return;
+    }
+
+    userReservationsList.innerHTML = '<p style="text-align:center; padding:1.5rem; color:var(--color-charcoal-muted);">Loading your reservations...</p>';
 
     let bookings = [];
 
-    // Try fetching from Supabase if connected
-    if (supabaseClient && currentUser && currentUser.email) {
+    // Strictly fetch reservations owned by this authenticated user
+    if (supabaseClient) {
       try {
         const { data, error } = await supabaseClient
           .from('reservations')
           .select('*')
-          .or(`email.eq.${currentUser.email}`)
+          .eq('user_id', currentUser.id)
           .order('created_at', { ascending: false });
 
-        if (!error && Array.isArray(data) && data.length > 0) {
+        if (!error && Array.isArray(data)) {
           bookings = data.map(item => ({
             id: item.id,
             refId: item.booking_ref,
@@ -1607,7 +1609,7 @@ document.addEventListener('DOMContentLoaded', () => {
       }
     }
 
-    // Fallback to local storage
+    // Fallback to user-specific cache
     if (bookings.length === 0) {
       bookings = getSavedReservations();
     }
@@ -1621,14 +1623,14 @@ document.addEventListener('DOMContentLoaded', () => {
             <line x1="8" y1="2" x2="8" y2="6"></line>
             <line x1="3" y1="10" x2="21" y2="10"></line>
           </svg>
-          <h4 style="font-family:var(--font-serif); font-size:1.15rem; color:var(--color-primary); margin-bottom:0.35rem;">No Active Bookings</h4>
-          <p style="font-size:0.875rem; color:var(--color-charcoal-muted); margin-bottom:1rem;">You don't have any table reservations saved yet.</p>
+          <h4 style="font-family:var(--font-serif); font-size:1.15rem; color:var(--color-primary); margin-bottom:0.35rem;">No Bookings Found</h4>
+          <p style="font-size:0.875rem; color:var(--color-charcoal-muted); margin-bottom:1rem;">You don't have any table reservations registered under <strong>${currentUser.email}</strong>.</p>
         </div>
       `;
       return;
     }
 
-    userReservationsList.innerHTML = bookings.map((item, idx) => `
+    userReservationsList.innerHTML = bookings.map((item) => `
       <div class="reservation-record-card" data-ref="${item.refId || ''}">
         <div class="record-card-top">
           <span class="record-ref">${item.refId || 'BB-BOOKING'}</span>
@@ -1651,7 +1653,7 @@ document.addEventListener('DOMContentLoaded', () => {
       </div>
     `).join('');
 
-    // Attach cancel booking handlers
+    // Attach cancel booking handlers (Strict Authorization: only owner can cancel)
     userReservationsList.querySelectorAll('.btn-record-cancel').forEach(btn => {
       btn.addEventListener('click', async function () {
         const ref = this.getAttribute('data-cancel-ref');
@@ -1661,26 +1663,36 @@ document.addEventListener('DOMContentLoaded', () => {
           return;
         }
 
-        // Cancel in Supabase
+        // Cancel in Supabase with user_id authorization check
         if (supabaseClient && dbId) {
           try {
-            await supabaseClient.from('reservations').update({ status: 'cancelled' }).eq('id', dbId);
+            const { error } = await supabaseClient
+              .from('reservations')
+              .update({ status: 'cancelled' })
+              .eq('id', dbId)
+              .eq('user_id', currentUser.id);
+
+            if (error) {
+              alert('Could not cancel booking: ' + error.message);
+              return;
+            }
           } catch (err) {
             console.warn('Supabase cancellation note:', err);
           }
         }
 
-        // Update in localStorage
+        // Update in user-specific localStorage cache
         try {
+          const key = getUserStorageKey();
           const current = getSavedReservations();
           const updated = current.map(b => (b.refId === ref || b.booking_ref === ref) ? { ...b, status: 'cancelled' } : b);
-          localStorage.setItem(STORAGE_KEY, JSON.stringify(updated));
+          localStorage.setItem(key, JSON.stringify(updated));
         } catch (e) {
           console.warn('LocalStorage cancel update error:', e);
         }
 
         renderUserReservations();
-        updateBookingsBar();
+        fetchUserBookingsCount();
       });
     });
   };

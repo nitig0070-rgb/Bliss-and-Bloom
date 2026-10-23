@@ -118,8 +118,8 @@ Then visit `http://localhost:8000` in your web browser.
    Interactive tasting menu modal detailing the seasonal chef's experience with instant reservation pre-fill.
 8. **Dynamic Restaurant Operating Status:**
    Evaluates live local time to display *"Open Today until 10:30 PM"* or opening hours.
-9. **Dual Demo & Cloud Storage:**
-   Gracefully runs in offline/demo mode using `localStorage` if cloud keys are omitted, and upgrades seamlessly to Supabase and Google Sheets when keys are provided.
+9. **User-Specific Authentication & Row-Level Authorization:**
+   Secure authentication via Supabase Auth with individual user sessions, personal reservations dashboard, and strict PostgreSQL Row Level Security (RLS) ensuring each user only accesses their own bookings.
 
 ---
 

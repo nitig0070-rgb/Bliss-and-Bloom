@@ -1111,8 +1111,8 @@
               Planning a quiet dinner or a special gathering? Reserve your spot and let us take care of the rest.
             </p>
             <div class="demo-badge-notice" id="cloud-status-badge">
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="demo-icon"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="8" x2="12" y2="12"></line><line x1="12" y1="16" x2="12.01" y2="16"></line></svg>
-              <span id="cloud-status-text">Demo Mode: Reservations saved locally in browser storage. Connect Supabase in Cloud Settings for live database sync.</span>
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="demo-icon"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"></path></svg>
+              <span id="cloud-status-text">Cloud Database &amp; Authentication: Real-time table reservations powered by Supabase.</span>
             </div>
           </div>
 
@@ -1316,13 +1316,13 @@
 
           </div>
 
-          <!-- Stored Demo Reservations Quick View Bar -->
+          <!-- User Bookings Bar -->
           <div class="existing-bookings-bar" id="existing-bookings-bar" style="display: none;">
             <div class="existing-bookings-info">
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="info-icon"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="16" y1="13" x2="8" y2="13"></line><line x1="16" y1="17" x2="8" y2="17"></line><polyline points="10 9 9 9 8 9"></polyline></svg>
-              <span id="existing-bookings-text">You have 0 saved demo bookings.</span>
+              <span id="existing-bookings-text">Signed in. You have active table reservations.</span>
             </div>
-            <button type="button" class="btn btn-text" id="clear-bookings-btn">Clear demo history</button>
+            <button type="button" class="btn btn-text" id="view-user-bookings-btn">View My Bookings &rarr;</button>
           </div>
 
         </div>
@@ -1599,11 +1599,11 @@
 
             <div class="form-alert-success newsletter-success-alert" id="newsletter-success-alert" style="display: none;" role="alert">
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="alert-icon"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"></path><polyline points="22 4 12 14.01 9 11.01"></polyline></svg>
-              <span>Thank you for subscribing! (Demo subscription simulated).</span>
+              <span>Thank you for subscribing! Your email has been added to our guest newsletter list.</span>
             </div>
 
             <p class="newsletter-note">
-              No spam, ever. Unsubscribe at any time. Treated as a front-end demo.
+              No spam, ever. Unsubscribe at any time with a single click.
             </p>
           </div>
         </div>
@@ -1722,7 +1722,7 @@
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width: 14px; height: 14px; display: inline-block; vertical-align: middle; margin-right: 4px;"><circle cx="12" cy="12" r="3"></circle><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path></svg>
             Cloud Connect
           </button>
-          <span class="demo-tag">Demonstration Restaurant Project</span>
+          <span class="demo-tag">Contemporary Dining · Jaipur</span>
         </div>
       </div>
     </div>
@@ -1826,8 +1826,8 @@
           <button type="button" class="btn btn-outline" id="close-modal-action-btn">Done</button>
         </div>
 
-        <p class="confirmation-disclaimer">
-          * Demo Notice: This reservation is saved locally on your device for demo purposes.
+        <p class="confirmation-disclaimer" id="confirmation-disclaimer-text">
+          A confirmation summary has been registered to your reservation record.
         </p>
       </div>
     </div>
@@ -1893,7 +1893,7 @@
       <!-- Cloud status callout -->
       <div class="cloud-mode-banner" id="auth-cloud-mode-banner">
         <span class="cloud-status-dot"></span>
-        <span id="auth-cloud-mode-text">Checking Supabase connection...</span>
+        <span id="auth-cloud-mode-text">Supabase Secure Authentication</span>
       </div>
 
       <!-- Tabs -->

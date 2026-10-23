@@ -112,9 +112,13 @@ When forms are submitted, three organized tabs are created automatically:
 
 ---
 
-## 🧪 4. Live Testing & Demo Simulation
+## 🧪 4. Real User Authentication & Authorization Testing
 
-The site includes smart environment detection:
-- **If credentials are not yet configured:** The site runs in **Demo Simulation Mode**. Auth works with instant demo sessions, reservations save cleanly to `localStorage`, and forms display informative confirmation alerts.
-- **When credentials are provided:** The site seamlessly switches to **Live Cloud Mode**, authenticating directly through Supabase Auth, querying your Postgres database, and pushing live rows to Google Sheets.
-- **In-Browser Cloud Settings:** You can click the **"Cloud Connect"** button in the website footer or user menu to paste credentials live and test the real-time cloud connections immediately.
+Authentication and authorization in Bliss & Bloom are built directly on top of **Supabase Auth** and **PostgreSQL Row Level Security (RLS)**:
+- **Real User Identity:** Every user has their own distinct Supabase UUID (`auth.uid()`), verified email, and profile name.
+- **Strict Authorization:** 
+  - Authenticated users can **only view their own reservations** (`user_id = auth.uid()`).
+  - Authenticated users can **only cancel/update their own reservations**.
+  - Anonymous or unauthorized users cannot access another patron's reservations.
+- **Profile Synchronization:** When a user registers, their profile information (`full_name`, `email`) is automatically synced via database triggers.
+- **In-Browser Cloud Settings:** You can click the **"Cloud Connect"** button in the website footer or user menu to paste credentials live and test real-time Supabase Auth and Google Sheets submissions immediately.

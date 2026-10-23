@@ -1,9 +1,61 @@
 -- =========================================================================
--- Bliss & Bloom Restaurant — Supabase Database Schema
--- Run this complete script in the Supabase SQL Editor (Dashboard > SQL Editor)
+-- Bliss & Bloom Restaurant — Supabase Database Schema & RLS Security
+-- Production-Ready User-Specific Authentication & Authorization
 -- =========================================================================
 
--- 1. Table: Reservations
+-- 1. Table: Profiles (Synchronized with Supabase auth.users)
+CREATE TABLE IF NOT EXISTS public.profiles (
+    id UUID PRIMARY KEY REFERENCES auth.users(id) ON DELETE CASCADE,
+    email TEXT UNIQUE NOT NULL,
+    full_name TEXT NOT NULL,
+    avatar_url TEXT,
+    created_at TIMESTAMPTZ DEFAULT now() NOT NULL,
+    updated_at TIMESTAMPTZ DEFAULT now() NOT NULL
+);
+
+-- Enable RLS on profiles
+ALTER TABLE public.profiles ENABLE ROW LEVEL SECURITY;
+
+-- Profiles Policies: Strictly user-specific
+CREATE POLICY "Users can view own profile"
+ON public.profiles
+FOR SELECT
+TO authenticated
+USING (auth.uid() = id);
+
+CREATE POLICY "Users can update own profile"
+ON public.profiles
+FOR UPDATE
+TO authenticated
+USING (auth.uid() = id)
+WITH CHECK (auth.uid() = id);
+
+-- Function & Trigger to automatically create a user profile upon Supabase signup
+CREATE OR REPLACE FUNCTION public.handle_new_user()
+RETURNS TRIGGER AS $$
+BEGIN
+    INSERT INTO public.profiles (id, email, full_name)
+    VALUES (
+        new.id,
+        new.email,
+        COALESCE(new.raw_user_meta_data->>'full_name', split_part(new.email, '@', 1))
+    )
+    ON CONFLICT (id) DO UPDATE
+    SET full_name = EXCLUDED.full_name,
+        updated_at = now();
+    RETURN NEW;
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+
+DROP TRIGGER IF EXISTS on_auth_user_created ON auth.users;
+CREATE TRIGGER on_auth_user_created
+AFTER INSERT ON auth.users
+FOR EACH ROW EXECUTE FUNCTION public.handle_new_user();
+
+
+-- =========================================================================
+-- 2. Table: Reservations (Strict User Authorization)
+-- =========================================================================
 CREATE TABLE IF NOT EXISTS public.reservations (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     created_at TIMESTAMPTZ DEFAULT now() NOT NULL,
@@ -17,53 +69,56 @@ CREATE TABLE IF NOT EXISTS public.reservations (
     occasion TEXT DEFAULT 'Casual Dining',
     notes TEXT DEFAULT '',
     status TEXT DEFAULT 'confirmed' CHECK (status IN ('confirmed', 'cancelled', 'completed')),
-    user_id UUID REFERENCES auth.users(id) ON DELETE SET NULL
+    user_id UUID REFERENCES auth.users(id) ON DELETE CASCADE
 );
 
--- Indexes for performance
-CREATE INDEX IF NOT EXISTS idx_reservations_email ON public.reservations (email);
+-- Optimized Indexes
 CREATE INDEX IF NOT EXISTS idx_reservations_user_id ON public.reservations (user_id);
+CREATE INDEX IF NOT EXISTS idx_reservations_email ON public.reservations (email);
 CREATE INDEX IF NOT EXISTS idx_reservations_booking_ref ON public.reservations (booking_ref);
 CREATE INDEX IF NOT EXISTS idx_reservations_created_at ON public.reservations (created_at DESC);
 
 -- Enable Row Level Security (RLS)
 ALTER TABLE public.reservations ENABLE ROW LEVEL SECURITY;
 
--- Policy: Allow any visitor (guest or authenticated) to create a reservation
-CREATE POLICY "Allow public insert to reservations" 
-ON public.reservations 
-FOR INSERT 
-TO public 
-WITH CHECK (true);
-
--- Policy: Users can view their own reservations (by user_id or matching email)
-CREATE POLICY "Users can view their own reservations" 
-ON public.reservations 
-FOR SELECT 
-TO public 
-USING (
-    (auth.uid() IS NOT NULL AND auth.uid() = user_id) OR
-    (auth.jwt() ->> 'email' IS NOT NULL AND auth.jwt() ->> 'email' = email)
+-- Policy 1: Insertion
+-- Authenticated users insert with their own user_id; guest visitors insert with user_id = null
+CREATE POLICY "Allow authenticated or guest insertion"
+ON public.reservations
+FOR INSERT
+TO public
+WITH CHECK (
+    (auth.uid() IS NULL AND user_id IS NULL) OR
+    (auth.uid() IS NOT NULL AND user_id = auth.uid())
 );
 
--- Policy: Users can update/cancel their own reservations
-CREATE POLICY "Users can update their own reservations" 
-ON public.reservations 
-FOR UPDATE 
-TO authenticated 
-USING (auth.uid() = user_id) 
+-- Policy 2: Strict User-Specific Selection (Authorization)
+-- Authenticated users can ONLY view reservations belonging to their own user_id
+CREATE POLICY "Users can only view their own reservations"
+ON public.reservations
+FOR SELECT
+TO authenticated
+USING (auth.uid() = user_id);
+
+-- Policy 3: Strict User-Specific Updates (e.g. Cancelling a Booking)
+-- Authenticated users can ONLY update reservations that belong to them
+CREATE POLICY "Users can only update their own reservations"
+ON public.reservations
+FOR UPDATE
+TO authenticated
+USING (auth.uid() = user_id)
 WITH CHECK (auth.uid() = user_id);
 
--- Policy: Users can delete their own reservations
-CREATE POLICY "Users can delete their own reservations" 
-ON public.reservations 
-FOR DELETE 
-TO authenticated 
+-- Policy 4: Strict User-Specific Deletion
+CREATE POLICY "Users can only delete their own reservations"
+ON public.reservations
+FOR DELETE
+TO authenticated
 USING (auth.uid() = user_id);
 
 
 -- =========================================================================
--- 2. Table: Contact Messages (Optional Supabase mirror alongside Google Sheets)
+-- 3. Table: Contacts (Inquiries)
 -- =========================================================================
 CREATE TABLE IF NOT EXISTS public.contacts (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -75,27 +130,23 @@ CREATE TABLE IF NOT EXISTS public.contacts (
     user_id UUID REFERENCES auth.users(id) ON DELETE SET NULL
 );
 
-CREATE INDEX IF NOT EXISTS idx_contacts_created_at ON public.contacts (created_at DESC);
-
 ALTER TABLE public.contacts ENABLE ROW LEVEL SECURITY;
 
--- Allow anyone to submit a contact message
-CREATE POLICY "Allow public insert to contacts" 
-ON public.contacts 
-FOR INSERT 
-TO public 
+CREATE POLICY "Allow public to submit inquiries"
+ON public.contacts
+FOR INSERT
+TO public
 WITH CHECK (true);
 
--- Authenticated users can view their own submitted messages
-CREATE POLICY "Users can view their own contact messages" 
-ON public.contacts 
-FOR SELECT 
-TO authenticated 
+CREATE POLICY "Users can view their own inquiries"
+ON public.contacts
+FOR SELECT
+TO authenticated
 USING (auth.uid() = user_id);
 
 
 -- =========================================================================
--- 3. Table: Newsletter Subscribers
+-- 4. Table: Newsletter Subscribers
 -- =========================================================================
 CREATE TABLE IF NOT EXISTS public.newsletter_subscribers (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -105,12 +156,8 @@ CREATE TABLE IF NOT EXISTS public.newsletter_subscribers (
 
 ALTER TABLE public.newsletter_subscribers ENABLE ROW LEVEL SECURITY;
 
-CREATE POLICY "Allow public insert to newsletter" 
-ON public.newsletter_subscribers 
-FOR INSERT 
-TO public 
+CREATE POLICY "Allow public newsletter subscription"
+ON public.newsletter_subscribers
+FOR INSERT
+TO public
 WITH CHECK (true);
-
--- =========================================================================
--- Schema setup complete!
--- =========================================================================
