@@ -33,8 +33,8 @@
   // Default configuration placeholders
   const DEFAULT_CONFIG = {
     // Supabase project credentials
-    SUPABASE_URL: '', // e.g., 'https://your-project-ref.supabase.co'
-    SUPABASE_ANON_KEY: '', // e.g., 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...'
+    SUPABASE_URL: 'https://xaviolkpbeqwfutrruhw.supabase.co', // e.g., 'https://your-project-ref.supabase.co'
+    SUPABASE_ANON_KEY: 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InhhdmlvbGtwYmVxd2Z1dHJydWh3Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTI3NzI0NjYsImV4cCI6MjEwODM0ODQ2Nn0.tq6MlcdPSKTEqjTq_81gx18cZU8CB0Od6vCWpW280oA', // e.g., 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...'
 
     // Google Sheets Apps Script Web App URL
     GOOGLE_SHEET_WEBHOOK_URL: '' // e.g., 'https://script.google.com/macros/s/AKfycb.../exec'
