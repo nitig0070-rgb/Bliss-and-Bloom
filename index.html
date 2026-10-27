@@ -102,6 +102,7 @@
           </div>
         </div>
 
+        <button type="button" class="btn btn-outline btn-nav btn-manage-bookings" id="header-manage-reservations-btn">Manage Bookings</button>
         <a href="#reservation" class="btn btn-primary btn-nav">Reserve a Table</a>
         
         <!-- Mobile Menu Hamburger Button -->
@@ -1114,6 +1115,11 @@
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="demo-icon"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"></path></svg>
               <span id="cloud-status-text">Cloud Database &amp; Authentication: Real-time table reservations powered by Supabase.</span>
             </div>
+            <div style="margin-top: 0.85rem; display: flex; justify-content: center; gap: 0.75rem; flex-wrap: wrap;">
+              <button type="button" class="btn btn-outline btn-sm" id="section-view-reservations-btn">
+                📋 View &amp; Manage Existing Bookings
+              </button>
+            </div>
           </div>
 
           <!-- Main Booking Layout: Form + Live Pass Summary Preview -->
@@ -2006,18 +2012,36 @@
     </div>
   </div>
 
-  <!-- 5. My Reservations Modal -->
+  <!-- 5. My Reservations Modal (READ & DELETE) -->
   <div class="reservation-modal" id="user-reservations-modal" role="dialog" aria-modal="true" aria-label="My table reservations" style="display: none;">
     <div class="modal-backdrop" id="user-reservations-backdrop"></div>
-    <div class="cloud-modal-dialog" style="max-width: 580px;">
+    <div class="cloud-modal-dialog" style="max-width: 620px;">
       <button class="modal-close-btn" id="user-reservations-close-btn" aria-label="Close my reservations">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
       </button>
 
-      <div class="tasting-header text-center" style="margin-bottom: 1.5rem;">
-        <span class="section-eyebrow">Your Dining History</span>
-        <h3 class="tasting-title">My Table Reservations</h3>
-        <p class="tasting-subtitle" id="my-reservations-subtitle">View and manage all your bookings with Bliss &amp; Bloom.</p>
+      <div class="tasting-header text-center" style="margin-bottom: 1.25rem;">
+        <span class="section-eyebrow">Real-Time Supabase Sync</span>
+        <h3 class="tasting-title">Table Reservations</h3>
+        <p class="tasting-subtitle" id="my-reservations-subtitle">View, edit, or cancel your bookings with Bliss &amp; Bloom.</p>
+      </div>
+
+      <!-- Real-time Status Alert / Feedback Banner -->
+      <div id="reservations-modal-alert" class="form-notification" style="display: none; margin-bottom: 1rem;">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="alert-icon"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="8" x2="12" y2="12"></line><line x1="12" y1="16" x2="12.01" y2="16"></line></svg>
+        <span id="reservations-modal-alert-msg"></span>
+      </div>
+
+      <!-- Search & Refresh Toolbar -->
+      <div class="reservations-toolbar" id="reservations-toolbar">
+        <div class="search-box">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"></line><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>
+          <input type="text" id="reservations-search-input" class="form-input" placeholder="Search by name, ref (#BB-...), or date...">
+        </div>
+        <button type="button" class="btn btn-outline btn-sm" id="refresh-reservations-btn" title="Refresh from Supabase">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:14px; height:14px;"><path d="M23 4v6h-6"></path><path d="M1 20v-6h6"></path><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"></path></svg>
+          <span>Refresh</span>
+        </button>
       </div>
 
       <!-- Reservations list -->
@@ -2029,6 +2053,148 @@
         <a href="#reservation" class="btn btn-primary btn-sm" id="reserve-another-from-modal-btn">New Reservation</a>
         <button type="button" class="btn btn-outline btn-sm" id="close-my-reservations-action-btn">Close</button>
       </div>
+    </div>
+  </div>
+
+  <!-- 5b. Edit Reservation Modal (UPDATE) -->
+  <div class="reservation-modal" id="edit-reservation-modal" role="dialog" aria-modal="true" aria-label="Edit table reservation" style="display: none; z-index: 10001;">
+    <div class="modal-backdrop" id="edit-res-backdrop"></div>
+    <div class="cloud-modal-dialog" style="max-width: 540px;">
+      <button class="modal-close-btn" id="edit-res-close-btn" aria-label="Close edit reservation modal">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
+      </button>
+
+      <div class="tasting-header text-center" style="margin-bottom: 1.25rem;">
+        <span class="section-eyebrow">Modify Booking</span>
+        <h3 class="tasting-title">Edit Reservation</h3>
+        <p class="tasting-subtitle" id="edit-res-subtitle">Update your booking details with Bliss &amp; Bloom.</p>
+      </div>
+
+      <!-- Edit Modal Alert Message -->
+      <div id="edit-res-alert" class="form-notification" style="display: none; margin-bottom: 1rem;">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="alert-icon"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="8" x2="12" y2="12"></line><line x1="12" y1="16" x2="12.01" y2="16"></line></svg>
+        <span id="edit-res-alert-msg"></span>
+      </div>
+
+      <form id="edit-reservation-form" novalidate>
+        <input type="hidden" id="edit-res-id">
+        <input type="hidden" id="edit-res-ref">
+
+        <div class="form-row">
+          <!-- Full Name -->
+          <div class="form-group">
+            <label for="edit-res-name" class="form-label">Full Name <span class="required">*</span></label>
+            <div class="input-wrap has-icon">
+              <svg class="field-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"></path><circle cx="12" cy="7" r="4"></circle></svg>
+              <input type="text" id="edit-res-name" class="form-input" required autocomplete="name">
+            </div>
+          </div>
+
+          <!-- Phone Number -->
+          <div class="form-group">
+            <label for="edit-res-phone" class="form-label">Phone Number <span class="required">*</span></label>
+            <div class="input-wrap has-icon">
+              <svg class="field-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72 12.84 12.84 0 0 0 .7 2.81 2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 2.81.7A2 2 0 0 1 22 16.92z"></path></svg>
+              <input type="tel" id="edit-res-phone" class="form-input" required autocomplete="tel">
+            </div>
+          </div>
+        </div>
+
+        <div class="form-row">
+          <!-- Email Address -->
+          <div class="form-group">
+            <label for="edit-res-email" class="form-label">Email Address <span class="required">*</span></label>
+            <div class="input-wrap has-icon">
+              <svg class="field-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"></path><polyline points="22,6 12,13 2,6"></polyline></svg>
+              <input type="email" id="edit-res-email" class="form-input" required autocomplete="email">
+            </div>
+          </div>
+
+          <!-- Guests -->
+          <div class="form-group">
+            <label for="edit-res-guests" class="form-label">Guests <span class="required">*</span></label>
+            <div class="input-wrap has-icon custom-select-wrap">
+              <svg class="field-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path><circle cx="9" cy="7" r="4"></circle><path d="M23 21v-2a4 4 0 0 0-3-3.87"></path><path d="M16 3.13a4 4 0 0 1 0 7.75"></path></svg>
+              <select id="edit-res-guests" class="form-input form-select" required>
+                <option value="1">1 Guest (Solo Dining)</option>
+                <option value="2">2 Guests (Table for Two)</option>
+                <option value="3">3 Guests</option>
+                <option value="4">4 Guests</option>
+                <option value="5">5 Guests</option>
+                <option value="6">6 Guests</option>
+                <option value="7">7 Guests</option>
+                <option value="8">8 Guests</option>
+                <option value="9">9+ Guests (Large Party)</option>
+              </select>
+            </div>
+          </div>
+        </div>
+
+        <div class="form-row">
+          <!-- Date -->
+          <div class="form-group">
+            <label for="edit-res-date" class="form-label">Reservation Date <span class="required">*</span></label>
+            <div class="input-wrap has-icon">
+              <svg class="field-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"></rect><line x1="16" y1="2" x2="16" y2="6"></line><line x1="8" y1="2" x2="8" y2="6"></line><line x1="3" y1="10" x2="21" y2="10"></line></svg>
+              <input type="date" id="edit-res-date" class="form-input" required>
+            </div>
+          </div>
+
+          <!-- Time -->
+          <div class="form-group">
+            <label for="edit-res-time" class="form-label">Preferred Time <span class="required">*</span></label>
+            <div class="input-wrap has-icon custom-select-wrap">
+              <svg class="field-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"></circle><polyline points="12 6 12 12 16 14"></polyline></svg>
+              <select id="edit-res-time" class="form-input form-select" required>
+                <optgroup label="Lunch Service">
+                  <option value="12:00 PM">12:00 PM</option>
+                  <option value="12:30 PM">12:30 PM</option>
+                  <option value="01:00 PM">01:00 PM</option>
+                  <option value="01:30 PM">01:30 PM</option>
+                  <option value="02:00 PM">02:00 PM</option>
+                  <option value="02:30 PM">02:30 PM</option>
+                </optgroup>
+                <optgroup label="Dinner Service">
+                  <option value="06:30 PM">06:30 PM</option>
+                  <option value="07:00 PM">07:00 PM</option>
+                  <option value="07:30 PM">07:30 PM</option>
+                  <option value="08:00 PM">08:00 PM</option>
+                  <option value="08:30 PM">08:30 PM</option>
+                  <option value="09:00 PM">09:00 PM</option>
+                  <option value="09:30 PM">09:30 PM</option>
+                  <option value="10:00 PM">10:00 PM</option>
+                </optgroup>
+              </select>
+            </div>
+          </div>
+        </div>
+
+        <!-- Occasion -->
+        <div class="form-group" style="margin-bottom: 1rem;">
+          <label for="edit-res-occasion" class="form-label">Dining Occasion</label>
+          <div class="input-wrap custom-select-wrap">
+            <select id="edit-res-occasion" class="form-input form-select">
+              <option value="Casual Dining">Casual Dining</option>
+              <option value="Birthday Celebration">Birthday Celebration</option>
+              <option value="Anniversary">Anniversary</option>
+              <option value="Business Dinner">Business Dinner</option>
+              <option value="Romantic Date">Romantic Date</option>
+              <option value="Family Gathering">Family Gathering</option>
+            </select>
+          </div>
+        </div>
+
+        <!-- Special Requests / Notes -->
+        <div class="form-group" style="margin-bottom: 1.5rem;">
+          <label for="edit-res-notes" class="form-label">Special Requests / Dietary Notes</label>
+          <textarea id="edit-res-notes" class="form-input" rows="2" placeholder="Dietary restrictions, seating preferences, etc."></textarea>
+        </div>
+
+        <div style="display: flex; justify-content: flex-end; gap: 0.75rem;">
+          <button type="button" class="btn btn-outline btn-sm" id="edit-res-cancel-btn">Cancel</button>
+          <button type="submit" class="btn btn-primary btn-sm" id="edit-res-submit-btn">Save Changes</button>
+        </div>
+      </form>
     </div>
   </div>
 

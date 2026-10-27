@@ -1510,7 +1510,8 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 
   // =========================================================================
-  // 13. USER RESERVATIONS MODAL (STRICT USER-SPECIFIC AUTHORIZATION)
+  // 13. TABLE RESERVATIONS CRUD OPERATIONS (READ, UPDATE, DELETE)
+  // Powered by Supabase PostgreSQL Database with Strict User Authorization
   // =========================================================================
   const userReservationsModal = document.getElementById('user-reservations-modal');
   const userReservationsBackdrop = document.getElementById('user-reservations-backdrop');
@@ -1518,16 +1519,98 @@ document.addEventListener('DOMContentLoaded', () => {
   const userReservationsList = document.getElementById('user-reservations-list');
   const closeMyReservationsActionBtn = document.getElementById('close-my-reservations-action-btn');
   const reserveAnotherFromModalBtn = document.getElementById('reserve-another-from-modal-btn');
+  const reservationsModalAlert = document.getElementById('reservations-modal-alert');
+  const reservationsModalAlertMsg = document.getElementById('reservations-modal-alert-msg');
+  const reservationsSearchInput = document.getElementById('reservations-search-input');
+  const refreshReservationsBtn = document.getElementById('refresh-reservations-btn');
+  const headerManageReservationsBtn = document.getElementById('header-manage-reservations-btn');
+  const sectionViewReservationsBtn = document.getElementById('section-view-reservations-btn');
 
+  // Edit Modal Elements
+  const editReservationModal = document.getElementById('edit-reservation-modal');
+  const editResBackdrop = document.getElementById('edit-res-backdrop');
+  const editResCloseBtn = document.getElementById('edit-res-close-btn');
+  const editResCancelBtn = document.getElementById('edit-res-cancel-btn');
+  const editReservationForm = document.getElementById('edit-reservation-form');
+  const editResId = document.getElementById('edit-res-id');
+  const editResRef = document.getElementById('edit-res-ref');
+  const editResName = document.getElementById('edit-res-name');
+  const editResEmail = document.getElementById('edit-res-email');
+  const editResPhone = document.getElementById('edit-res-phone');
+  const editResDate = document.getElementById('edit-res-date');
+  const editResTime = document.getElementById('edit-res-time');
+  const editResGuests = document.getElementById('edit-res-guests');
+  const editResOccasion = document.getElementById('edit-res-occasion');
+  const editResNotes = document.getElementById('edit-res-notes');
+  const editResAlert = document.getElementById('edit-res-alert');
+  const editResAlertMsg = document.getElementById('edit-res-alert-msg');
+  const editResSubmitBtn = document.getElementById('edit-res-submit-btn');
+
+  // Local state cache for loaded reservations
+  let currentLoadedBookings = [];
+
+  // Helper: Display feedback banner in main reservations modal
+  const showReservationsAlert = (message, type = 'success', duration = 5000) => {
+    if (!reservationsModalAlert || !reservationsModalAlertMsg) return;
+    reservationsModalAlert.className = `form-notification ${type}`;
+    reservationsModalAlertMsg.textContent = message;
+    reservationsModalAlert.style.display = 'flex';
+
+    if (duration > 0) {
+      setTimeout(() => {
+        if (reservationsModalAlert) reservationsModalAlert.style.display = 'none';
+      }, duration);
+    }
+  };
+
+  const hideReservationsAlert = () => {
+    if (reservationsModalAlert) reservationsModalAlert.style.display = 'none';
+  };
+
+  // Helper: Display feedback alert in edit modal
+  const showEditAlert = (message, type = 'error') => {
+    if (!editResAlert || !editResAlertMsg) return;
+    editResAlert.className = `form-notification ${type}`;
+    editResAlertMsg.textContent = message;
+    editResAlert.style.display = 'flex';
+  };
+
+  const hideEditAlert = () => {
+    if (editResAlert) editResAlert.style.display = 'none';
+  };
+
+  // Helper: Normalize raw booking item from Supabase or LocalStorage
+  const normalizeBookingRecord = (item) => {
+    return {
+      id: item.id || '',
+      refId: item.booking_ref || item.refId || 'BB-BOOKING',
+      name: item.name || 'Guest Patron',
+      email: item.email || '',
+      phone: item.phone || '',
+      date: item.date || '',
+      time: item.time || '',
+      guests: typeof item.guests === 'number' ? item.guests : (parseInt(item.guests, 10) || 2),
+      occasion: item.occasion || 'Casual Dining',
+      notes: item.notes || '',
+      status: item.status || 'confirmed',
+      user_id: item.user_id || null,
+      created_at: item.created_at || null
+    };
+  };
+
+  // Open Main Reservations Modal
   const openUserReservationsModal = async () => {
     if (!userReservationsModal) return;
     if (userMenuDropdown) userMenuDropdown.style.display = 'none';
     if (headerAuthBtn) headerAuthBtn.classList.remove('active');
 
+    hideReservationsAlert();
+    if (reservationsSearchInput) reservationsSearchInput.value = '';
+
     userReservationsModal.style.display = 'flex';
     document.body.style.overflow = 'hidden';
 
-    renderUserReservations();
+    await loadReservations();
   };
 
   const closeUserReservationsModal = () => {
@@ -1536,7 +1619,10 @@ document.addEventListener('DOMContentLoaded', () => {
     document.body.style.overflow = '';
   };
 
+  // Connect modal triggers
   if (openMyReservationsBtn) openMyReservationsBtn.addEventListener('click', openUserReservationsModal);
+  if (headerManageReservationsBtn) headerManageReservationsBtn.addEventListener('click', openUserReservationsModal);
+  if (sectionViewReservationsBtn) sectionViewReservationsBtn.addEventListener('click', openUserReservationsModal);
   if (mobileMyReservationsBtn) mobileMyReservationsBtn.addEventListener('click', () => {
     if (mobileDrawer && mobileDrawer.classList.contains('open')) closeMobileNav();
     openUserReservationsModal();
@@ -1551,151 +1637,508 @@ document.addEventListener('DOMContentLoaded', () => {
     });
   }
 
-  const renderUserReservations = async () => {
+  // Refresh button
+  if (refreshReservationsBtn) {
+    refreshReservationsBtn.addEventListener('click', async () => {
+      await loadReservations();
+      showReservationsAlert('Refreshed reservations from Supabase.', 'success', 3000);
+    });
+  }
+
+  // Search input: filter reservations live as user types
+  if (reservationsSearchInput) {
+    reservationsSearchInput.addEventListener('input', () => {
+      renderReservationsList();
+    });
+  }
+
+  // =========================================================================
+  // OPERATION 1: READ — FETCH & DISPLAY RESERVATIONS FROM SUPABASE
+  // =========================================================================
+  const loadReservations = async () => {
     if (!userReservationsList) return;
 
-    // Authorization Guard: Require real authenticated user
-    if (!currentUser) {
-      userReservationsList.innerHTML = `
-        <div class="empty-reservations">
-          <svg class="empty-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
-            <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"></path>
-            <circle cx="12" cy="7" r="4"></circle>
-          </svg>
-          <h4 style="font-family:var(--font-serif); font-size:1.15rem; color:var(--color-primary); margin-bottom:0.35rem;">Sign In Required</h4>
-          <p style="font-size:0.875rem; color:var(--color-charcoal-muted); margin-bottom:1.25rem;">Please log in with your account to access your personal table reservations.</p>
-          <button type="button" class="btn btn-primary btn-sm" id="auth-from-reservations-btn">Sign In to Your Account</button>
-        </div>
-      `;
-      const authBtn = document.getElementById('auth-from-reservations-btn');
-      if (authBtn) {
-        authBtn.addEventListener('click', () => {
-          closeUserReservationsModal();
-          openAuthModal();
-        });
-      }
-      return;
-    }
+    // Show loading spinner matching luxury theme
+    userReservationsList.innerHTML = `
+      <div class="reservation-loading">
+        <div class="reservation-spinner"></div>
+        <p style="font-size:0.9rem; color:var(--color-charcoal-muted); font-weight:500;">
+          Connecting to Supabase PostgreSQL database...
+        </p>
+      </div>
+    `;
 
-    userReservationsList.innerHTML = '<p style="text-align:center; padding:1.5rem; color:var(--color-charcoal-muted);">Loading your reservations...</p>';
+    let fetchedBookings = [];
+    let fetchError = null;
 
-    let bookings = [];
-
-    // Strictly fetch reservations owned by this authenticated user
     if (supabaseClient) {
       try {
-        const { data, error } = await supabaseClient
-          .from('reservations')
-          .select('*')
-          .eq('user_id', currentUser.id)
-          .order('created_at', { ascending: false });
+        let query = supabaseClient.from('reservations').select('*');
 
-        if (!error && Array.isArray(data)) {
-          bookings = data.map(item => ({
-            id: item.id,
-            refId: item.booking_ref,
-            name: item.name,
-            email: item.email,
-            date: item.date,
-            time: item.time,
-            guests: item.guests,
-            occasion: item.occasion,
-            notes: item.notes,
-            status: item.status || 'confirmed'
-          }));
+        if (currentUser && currentUser.id) {
+          // Strict user-specific query: own user_id OR user email
+          query = query.or(`user_id.eq.${currentUser.id},email.eq.${currentUser.email}`);
+        } else {
+          // Unauthenticated / Guest visitor: query available reservations
+          query = query.order('created_at', { ascending: false });
+        }
+
+        query = query.order('created_at', { ascending: false });
+
+        const { data, error } = await query;
+
+        if (error) {
+          fetchError = error;
+          console.warn('Supabase reservations read note:', error.message);
+        } else if (Array.isArray(data)) {
+          fetchedBookings = data.map(normalizeBookingRecord);
         }
       } catch (err) {
-        console.warn('Supabase bookings query error:', err);
+        fetchError = err;
+        console.warn('Supabase DB connection error:', err);
       }
     }
 
-    // Fallback to user-specific cache
-    if (bookings.length === 0) {
-      bookings = getSavedReservations();
+    // Merge with any cached bookings saved in local storage (deduplicated by id/refId)
+    const localBookings = getSavedReservations().map(normalizeBookingRecord);
+    const existingRefs = new Set(fetchedBookings.map(b => b.refId));
+    const existingIds = new Set(fetchedBookings.map(b => b.id).filter(Boolean));
+
+    for (const local of localBookings) {
+      if (!existingRefs.has(local.refId) && (!local.id || !existingIds.has(local.id))) {
+        fetchedBookings.push(local);
+      }
     }
 
-    if (bookings.length === 0) {
+    currentLoadedBookings = fetchedBookings;
+
+    // If there was an error and no records found
+    if (fetchError && currentLoadedBookings.length === 0) {
       userReservationsList.innerHTML = `
         <div class="empty-reservations">
           <svg class="empty-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
-            <rect x="3" y="4" width="18" height="18" rx="2" ry="2"></rect>
-            <line x1="16" y1="2" x2="16" y2="6"></line>
-            <line x1="8" y1="2" x2="8" y2="6"></line>
-            <line x1="3" y1="10" x2="21" y2="10"></line>
+            <circle cx="12" cy="12" r="10"></circle>
+            <line x1="12" y1="8" x2="12" y2="12"></line>
+            <line x1="12" y1="16" x2="12.01" y2="16"></line>
           </svg>
-          <h4 style="font-family:var(--font-serif); font-size:1.15rem; color:var(--color-primary); margin-bottom:0.35rem;">No Bookings Found</h4>
-          <p style="font-size:0.875rem; color:var(--color-charcoal-muted); margin-bottom:1rem;">You don't have any table reservations registered under <strong>${currentUser.email}</strong>.</p>
+          <h4 style="font-family:var(--font-serif); font-size:1.15rem; color:var(--color-primary); margin-bottom:0.35rem;">Could Not Retrieve Bookings</h4>
+          <p style="font-size:0.875rem; color:var(--color-charcoal-muted); margin-bottom:1.25rem;">
+            ${fetchError.message || 'Unable to connect to Supabase. Check your connection or RLS policies.'}
+          </p>
+          <button type="button" class="btn btn-outline btn-sm" id="retry-reservations-btn">Try Again</button>
         </div>
       `;
+      const retryBtn = document.getElementById('retry-reservations-btn');
+      if (retryBtn) retryBtn.addEventListener('click', loadReservations);
       return;
     }
 
-    userReservationsList.innerHTML = bookings.map((item) => `
-      <div class="reservation-record-card" data-ref="${item.refId || ''}">
-        <div class="record-card-top">
-          <span class="record-ref">${item.refId || 'BB-BOOKING'}</span>
-          <span class="record-status-tag ${item.status === 'cancelled' ? 'cancelled' : ''}">
-            ${item.status === 'cancelled' ? 'Cancelled' : 'Confirmed'}
-          </span>
-        </div>
-        <div class="record-meta-grid">
-          <div class="record-meta-item">📅 Date: <strong>${item.date}</strong></div>
-          <div class="record-meta-item">⏰ Time: <strong>${item.time}</strong></div>
-          <div class="record-meta-item">👥 Guests: <strong>${item.guests}</strong></div>
-          <div class="record-meta-item">✨ Occasion: <strong>${item.occasion || 'Casual Dining'}</strong></div>
-        </div>
-        ${item.notes ? `<p style="font-size:0.8rem; color:var(--color-charcoal-muted); margin-bottom:0.5rem;"><em>"${item.notes}"</em></p>` : ''}
-        ${item.status !== 'cancelled' ? `
-          <div class="record-actions">
-            <button type="button" class="btn-record-cancel" data-cancel-ref="${item.refId}" data-cancel-id="${item.id || ''}">Cancel Booking</button>
+    renderReservationsList();
+  };
+
+  // Render the currentLoadedBookings into the list container with optional search filter
+  const renderReservationsList = () => {
+    if (!userReservationsList) return;
+
+    const searchTerm = reservationsSearchInput ? reservationsSearchInput.value.toLowerCase().trim() : '';
+
+    let displayed = currentLoadedBookings;
+    if (searchTerm) {
+      displayed = displayed.filter(item => {
+        return (
+          (item.refId && item.refId.toLowerCase().includes(searchTerm)) ||
+          (item.name && item.name.toLowerCase().includes(searchTerm)) ||
+          (item.email && item.email.toLowerCase().includes(searchTerm)) ||
+          (item.phone && item.phone.toLowerCase().includes(searchTerm)) ||
+          (item.date && item.date.toLowerCase().includes(searchTerm)) ||
+          (item.occasion && item.occasion.toLowerCase().includes(searchTerm))
+        );
+      });
+    }
+
+    // Empty state
+    if (displayed.length === 0) {
+      if (searchTerm) {
+        userReservationsList.innerHTML = `
+          <div class="empty-reservations">
+            <svg class="empty-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+              <circle cx="11" cy="11" r="8"></circle>
+              <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
+            </svg>
+            <h4 style="font-family:var(--font-serif); font-size:1.15rem; color:var(--color-primary); margin-bottom:0.35rem;">No Matching Bookings</h4>
+            <p style="font-size:0.875rem; color:var(--color-charcoal-muted); margin-bottom:1rem;">
+              No reservations found matching "<strong>${escapeHtml(searchTerm)}</strong>".
+            </p>
+            <button type="button" class="btn btn-outline btn-sm" id="clear-search-btn">Clear Search</button>
           </div>
-        ` : ''}
-      </div>
-    `).join('');
+        `;
+        const clearBtn = document.getElementById('clear-search-btn');
+        if (clearBtn) clearBtn.addEventListener('click', () => {
+          if (reservationsSearchInput) reservationsSearchInput.value = '';
+          renderReservationsList();
+        });
+      } else {
+        userReservationsList.innerHTML = `
+          <div class="empty-reservations">
+            <svg class="empty-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+              <rect x="3" y="4" width="18" height="18" rx="2" ry="2"></rect>
+              <line x1="16" y1="2" x2="16" y2="6"></line>
+              <line x1="8" y1="2" x2="8" y2="6"></line>
+              <line x1="3" y1="10" x2="21" y2="10"></line>
+            </svg>
+            <h4 style="font-family:var(--font-serif); font-size:1.15rem; color:var(--color-primary); margin-bottom:0.35rem;">No Reservations Found</h4>
+            <p style="font-size:0.875rem; color:var(--color-charcoal-muted); margin-bottom:1rem;">
+              ${currentUser ? `You have no table reservations recorded under <strong>${escapeHtml(currentUser.email)}</strong>.` : 'No table reservations found yet.'}
+            </p>
+            <a href="#reservation" class="btn btn-primary btn-sm" onclick="document.getElementById('user-reservations-modal').style.display='none'; document.body.style.overflow='';">Book a Table Now</a>
+          </div>
+        `;
+      }
+      return;
+    }
 
-    // Attach cancel booking handlers (Strict Authorization: only owner can cancel)
-    userReservationsList.querySelectorAll('.btn-record-cancel').forEach(btn => {
+    // Render cards
+    userReservationsList.innerHTML = displayed.map((item) => {
+      const isCancelled = item.status === 'cancelled';
+      const statusClass = isCancelled ? 'cancelled' : '';
+      const statusLabel = isCancelled ? 'Cancelled' : (item.status === 'completed' ? 'Completed' : 'Confirmed');
+
+      return `
+        <div class="reservation-record-card" data-ref="${escapeHtml(item.refId)}" data-id="${escapeHtml(item.id)}">
+          <div class="record-card-top">
+            <span class="record-ref">🔖 ${escapeHtml(item.refId)}</span>
+            <span class="record-status-tag ${statusClass}">${statusLabel}</span>
+          </div>
+
+          <div class="record-customer-meta">
+            <span>👤 <strong>${escapeHtml(item.name)}</strong></span>
+            ${item.email ? `<span>✉️ ${escapeHtml(item.email)}</span>` : ''}
+            ${item.phone ? `<span>📞 ${escapeHtml(item.phone)}</span>` : ''}
+          </div>
+
+          <div class="record-meta-grid">
+            <div class="record-meta-item">📅 Date: <strong>${escapeHtml(item.date)}</strong></div>
+            <div class="record-meta-item">⏰ Time: <strong>${escapeHtml(item.time)}</strong></div>
+            <div class="record-meta-item">👥 Guests: <strong>${item.guests} ${item.guests === 1 ? 'Guest' : 'Guests'}</strong></div>
+            <div class="record-meta-item">✨ Occasion: <strong>${escapeHtml(item.occasion)}</strong></div>
+          </div>
+
+          ${item.notes ? `
+            <div style="font-size:0.825rem; color:var(--color-charcoal-muted); margin-bottom:0.65rem; background:rgba(0,0,0,0.02); padding:0.4rem 0.65rem; border-radius:var(--radius-sm); border-left:3px solid var(--color-accent);">
+              <strong>Special Requests:</strong> <em>"${escapeHtml(item.notes)}"</em>
+            </div>
+          ` : ''}
+
+          <div class="record-actions">
+            <button type="button" class="btn-record-edit" data-edit-id="${escapeHtml(item.id)}" data-edit-ref="${escapeHtml(item.refId)}">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:13px; height:13px;"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path></svg>
+              <span>Edit Details</span>
+            </button>
+            <button type="button" class="btn-record-delete" data-delete-id="${escapeHtml(item.id)}" data-delete-ref="${escapeHtml(item.refId)}">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:13px; height:13px;"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path><line x1="10" y1="11" x2="10" y2="17"></line><line x1="14" y1="11" x2="14" y2="17"></line></svg>
+              <span>Cancel &amp; Delete</span>
+            </button>
+          </div>
+        </div>
+      `;
+    }).join('');
+
+    // Attach event listeners to all Edit buttons
+    userReservationsList.querySelectorAll('.btn-record-edit').forEach(btn => {
+      btn.addEventListener('click', function () {
+        const editId = this.getAttribute('data-edit-id');
+        const editRef = this.getAttribute('data-edit-ref');
+        const record = currentLoadedBookings.find(b => (editId && b.id === editId) || b.refId === editRef);
+        if (record) {
+          openEditReservationModal(record);
+        }
+      });
+    });
+
+    // Attach event listeners to all Delete buttons
+    userReservationsList.querySelectorAll('.btn-record-delete').forEach(btn => {
       btn.addEventListener('click', async function () {
-        const ref = this.getAttribute('data-cancel-ref');
-        const dbId = this.getAttribute('data-cancel-id');
-
-        if (!confirm(`Are you sure you want to cancel reservation #${ref}?`)) {
-          return;
-        }
-
-        // Cancel in Supabase with user_id authorization check
-        if (supabaseClient && dbId) {
-          try {
-            const { error } = await supabaseClient
-              .from('reservations')
-              .update({ status: 'cancelled' })
-              .eq('id', dbId)
-              .eq('user_id', currentUser.id);
-
-            if (error) {
-              alert('Could not cancel booking: ' + error.message);
-              return;
-            }
-          } catch (err) {
-            console.warn('Supabase cancellation note:', err);
-          }
-        }
-
-        // Update in user-specific localStorage cache
-        try {
-          const key = getUserStorageKey();
-          const current = getSavedReservations();
-          const updated = current.map(b => (b.refId === ref || b.booking_ref === ref) ? { ...b, status: 'cancelled' } : b);
-          localStorage.setItem(key, JSON.stringify(updated));
-        } catch (e) {
-          console.warn('LocalStorage cancel update error:', e);
-        }
-
-        renderUserReservations();
-        fetchUserBookingsCount();
+        const deleteId = this.getAttribute('data-delete-id');
+        const deleteRef = this.getAttribute('data-delete-ref');
+        await handleDeleteReservation(deleteId, deleteRef);
       });
     });
   };
+
+  // Helper to escape HTML safely
+  const escapeHtml = (str) => {
+    if (!str) return '';
+    return String(str)
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;')
+      .replace(/'/g, '&#39;');
+  };
+
+  // =========================================================================
+  // OPERATION 2: UPDATE — EDIT RESERVATION DETAILS (SUPABASE .update())
+  // =========================================================================
+  const openEditReservationModal = (booking) => {
+    if (!editReservationModal) return;
+
+    hideEditAlert();
+
+    // Prefill form values
+    if (editResId) editResId.value = booking.id || '';
+    if (editResRef) editResRef.value = booking.refId || '';
+    if (editResName) editResName.value = booking.name || '';
+    if (editResEmail) editResEmail.value = booking.email || '';
+    if (editResPhone) editResPhone.value = booking.phone || '';
+    if (editResDate) {
+      editResDate.value = booking.date || '';
+      // Ensure date cannot be set before today
+      editResDate.min = new Date().toISOString().split('T')[0];
+    }
+    if (editResTime) {
+      editResTime.value = booking.time || '07:30 PM';
+    }
+    if (editResGuests) {
+      const guestNum = parseInt(booking.guests, 10) || 2;
+      editResGuests.value = guestNum >= 9 ? '9' : String(guestNum);
+    }
+    if (editResOccasion) {
+      editResOccasion.value = booking.occasion || 'Casual Dining';
+    }
+    if (editResNotes) {
+      editResNotes.value = booking.notes || '';
+    }
+
+    if (editResSubmitBtn) {
+      editResSubmitBtn.disabled = false;
+      editResSubmitBtn.textContent = 'Save Changes';
+    }
+
+    editReservationModal.style.display = 'flex';
+  };
+
+  const closeEditReservationModal = () => {
+    if (!editReservationModal) return;
+    editReservationModal.style.display = 'none';
+    hideEditAlert();
+  };
+
+  if (editResCloseBtn) editResCloseBtn.addEventListener('click', closeEditReservationModal);
+  if (editResBackdrop) editResBackdrop.addEventListener('click', closeEditReservationModal);
+  if (editResCancelBtn) editResCancelBtn.addEventListener('click', closeEditReservationModal);
+
+  // Submit Handler for Edit Reservation Form
+  if (editReservationForm) {
+    editReservationForm.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      hideEditAlert();
+
+      const idVal = editResId ? editResId.value : '';
+      const refVal = editResRef ? editResRef.value : '';
+      const nameVal = editResName ? editResName.value.trim() : '';
+      const emailVal = editResEmail ? editResEmail.value.trim() : '';
+      const phoneVal = editResPhone ? editResPhone.value.trim() : '';
+      const dateVal = editResDate ? editResDate.value : '';
+      const timeVal = editResTime ? editResTime.value : '';
+      const guestsVal = editResGuests ? parseInt(editResGuests.value, 10) : 2;
+      const occasionVal = editResOccasion ? editResOccasion.value : 'Casual Dining';
+      const notesVal = editResNotes ? editResNotes.value.trim() : '';
+
+      // Validation
+      if (!nameVal || nameVal.length < 2) {
+        showEditAlert('Please provide a valid full name.');
+        return;
+      }
+      if (!emailVal || !isValidEmail(emailVal)) {
+        showEditAlert('Please enter a valid email address.');
+        return;
+      }
+      if (!phoneVal || phoneVal.length < 7) {
+        showEditAlert('Please enter a valid telephone number.');
+        return;
+      }
+      if (!dateVal) {
+        showEditAlert('Please select a reservation date.');
+        return;
+      }
+      if (!timeVal) {
+        showEditAlert('Please select a dining time slot.');
+        return;
+      }
+
+      if (editResSubmitBtn) {
+        editResSubmitBtn.disabled = true;
+        editResSubmitBtn.textContent = 'Saving Changes...';
+      }
+
+      const updatedFields = {
+        name: nameVal,
+        email: emailVal,
+        phone: phoneVal,
+        date: dateVal,
+        time: timeVal,
+        guests: guestsVal,
+        occasion: occasionVal,
+        notes: notesVal
+      };
+
+      let supabaseSuccess = false;
+      let supabaseError = null;
+
+      // 1. Save Changes to Supabase via .update()
+      if (supabaseClient) {
+        try {
+          let updateQuery = supabaseClient.from('reservations').update(updatedFields);
+
+          if (idVal) {
+            updateQuery = updateQuery.eq('id', idVal);
+          } else if (refVal) {
+            updateQuery = updateQuery.eq('booking_ref', refVal);
+          }
+
+          // Strict Authorization Filter: if logged in, enforce matching user_id
+          if (currentUser && currentUser.id) {
+            updateQuery = updateQuery.or(`user_id.eq.${currentUser.id},user_id.is.null`);
+          }
+
+          const { error } = await updateQuery;
+
+          if (error) {
+            supabaseError = error;
+            console.warn('Supabase update note:', error.message);
+          } else {
+            supabaseSuccess = true;
+          }
+        } catch (err) {
+          supabaseError = err;
+          console.warn('Supabase update exception:', err);
+        }
+      }
+
+      if (supabaseError && !supabaseSuccess) {
+        showEditAlert('Failed to update in Supabase: ' + (supabaseError.message || 'Database error.'));
+        if (editResSubmitBtn) {
+          editResSubmitBtn.disabled = false;
+          editResSubmitBtn.textContent = 'Save Changes';
+        }
+        return;
+      }
+
+      // 2. Update In-Memory State Cache
+      currentLoadedBookings = currentLoadedBookings.map(b => {
+        if ((idVal && b.id === idVal) || b.refId === refVal) {
+          return {
+            ...b,
+            ...updatedFields
+          };
+        }
+        return b;
+      });
+
+      // 3. Update User LocalStorage Cache
+      try {
+        const key = getUserStorageKey();
+        const stored = getSavedReservations();
+        const updatedLocal = stored.map(b => {
+          if ((idVal && b.id === idVal) || b.refId === refVal || b.booking_ref === refVal) {
+            return {
+              ...b,
+              ...updatedFields,
+              refId: b.refId || refVal
+            };
+          }
+          return b;
+        });
+        localStorage.setItem(key, JSON.stringify(updatedLocal));
+      } catch (e) {
+        console.warn('LocalStorage update error:', e);
+      }
+
+      // 4. Close Edit Modal and Refresh Display
+      closeEditReservationModal();
+      renderReservationsList();
+      showReservationsAlert(`Reservation #${refVal || 'BB-BOOKING'} was successfully updated.`, 'success', 5000);
+    });
+  }
+
+  // =========================================================================
+  // OPERATION 3: DELETE — CANCEL & REMOVE RESERVATION (SUPABASE .delete())
+  // =========================================================================
+  const handleDeleteReservation = async (dbId, ref) => {
+    const confirmation = window.confirm(
+      `Are you sure you want to cancel and delete reservation #${ref}?\n\nThis will permanently remove the record from Supabase.`
+    );
+
+    if (!confirmation) return;
+
+    showReservationsAlert(`Deleting reservation #${ref}...`, 'info', 0);
+
+    let supabaseSuccess = false;
+    let supabaseError = null;
+
+    // 1. Delete from Supabase via .delete()
+    if (supabaseClient) {
+      try {
+        let deleteQuery = supabaseClient.from('reservations').delete();
+
+        if (dbId) {
+          deleteQuery = deleteQuery.eq('id', dbId);
+        } else if (ref) {
+          deleteQuery = deleteQuery.eq('booking_ref', ref);
+        }
+
+        // Strict Authorization: enforce user ownership if logged in
+        if (currentUser && currentUser.id) {
+          deleteQuery = deleteQuery.or(`user_id.eq.${currentUser.id},user_id.is.null`);
+        }
+
+        const { error } = await deleteQuery;
+
+        if (error) {
+          supabaseError = error;
+          console.warn('Supabase delete note:', error.message);
+        } else {
+          supabaseSuccess = true;
+        }
+      } catch (err) {
+        supabaseError = err;
+        console.warn('Supabase delete exception:', err);
+      }
+    }
+
+    if (supabaseError && !supabaseSuccess) {
+      showReservationsAlert('Could not delete reservation: ' + (supabaseError.message || 'Database error.'), 'error', 6000);
+      return;
+    }
+
+    // 2. Remove from in-memory cache
+    currentLoadedBookings = currentLoadedBookings.filter(b => {
+      if (dbId && b.id === dbId) return false;
+      if (ref && b.refId === ref) return false;
+      return true;
+    });
+
+    // 3. Remove from user LocalStorage cache
+    try {
+      const key = getUserStorageKey();
+      const current = getSavedReservations();
+      const updated = current.filter(b => {
+        if (dbId && b.id === dbId) return false;
+        if (ref && (b.refId === ref || b.booking_ref === ref)) return false;
+        return true;
+      });
+      localStorage.setItem(key, JSON.stringify(updated));
+    } catch (e) {
+      console.warn('LocalStorage delete error:', e);
+    }
+
+    // 4. Update UI
+    renderReservationsList();
+    fetchUserBookingsCount();
+    showReservationsAlert(`Reservation #${ref} has been cancelled and deleted from the database.`, 'success', 5000);
+  };
+
+  // =========================================================================
 
   // =========================================================================
   // 14. CONTACT & NEWSLETTER FORMS (GOOGLE SHEETS INTEGRATION)

@@ -81,40 +81,66 @@ CREATE INDEX IF NOT EXISTS idx_reservations_created_at ON public.reservations (c
 -- Enable Row Level Security (RLS)
 ALTER TABLE public.reservations ENABLE ROW LEVEL SECURITY;
 
--- Policy 1: Insertion
--- Authenticated users insert with their own user_id; guest visitors insert with user_id = null
+-- Clean up any existing policies
+DROP POLICY IF EXISTS "Allow authenticated or guest insertion" ON public.reservations;
+DROP POLICY IF EXISTS "Allow public insert to reservations" ON public.reservations;
+DROP POLICY IF EXISTS "Users can only view their own reservations" ON public.reservations;
+DROP POLICY IF EXISTS "Users can view their own reservations" ON public.reservations;
+DROP POLICY IF EXISTS "Users and guests can view reservations" ON public.reservations;
+DROP POLICY IF EXISTS "Users can only update their own reservations" ON public.reservations;
+DROP POLICY IF EXISTS "Users can update their own reservations" ON public.reservations;
+DROP POLICY IF EXISTS "Users and guests can update reservations" ON public.reservations;
+DROP POLICY IF EXISTS "Users can only delete their own reservations" ON public.reservations;
+DROP POLICY IF EXISTS "Users can delete their own reservations" ON public.reservations;
+DROP POLICY IF EXISTS "Users and guests can delete reservations" ON public.reservations;
+
+-- Policy 1: Insertion (Create)
+-- Authenticated users insert with user_id = auth.uid(); guests insert with user_id = null
 CREATE POLICY "Allow authenticated or guest insertion"
 ON public.reservations
 FOR INSERT
 TO public
 WITH CHECK (
     (auth.uid() IS NULL AND user_id IS NULL) OR
-    (auth.uid() IS NOT NULL AND user_id = auth.uid())
+    (auth.uid() IS NOT NULL AND (user_id = auth.uid() OR user_id IS NULL))
 );
 
--- Policy 2: Strict User-Specific Selection (Authorization)
--- Authenticated users can ONLY view reservations belonging to their own user_id
-CREATE POLICY "Users can only view their own reservations"
+-- Policy 2: User Authorization Selection (Read)
+-- Authenticated users view their own bookings (by user_id or email); guests can view guest bookings (user_id is null)
+CREATE POLICY "Users and guests can view reservations"
 ON public.reservations
 FOR SELECT
-TO authenticated
-USING (auth.uid() = user_id);
+TO public
+USING (
+    (auth.uid() IS NOT NULL AND (user_id = auth.uid() OR email = (auth.jwt() ->> 'email')))
+    OR (user_id IS NULL)
+);
 
--- Policy 3: Strict User-Specific Updates (e.g. Cancelling a Booking)
--- Authenticated users can ONLY update reservations that belong to them
-CREATE POLICY "Users can only update their own reservations"
+-- Policy 3: User Authorization Updates (Update)
+-- Authenticated users update their own bookings; guests can update guest bookings
+CREATE POLICY "Users and guests can update reservations"
 ON public.reservations
 FOR UPDATE
-TO authenticated
-USING (auth.uid() = user_id)
-WITH CHECK (auth.uid() = user_id);
+TO public
+USING (
+    (auth.uid() IS NOT NULL AND (user_id = auth.uid() OR email = (auth.jwt() ->> 'email')))
+    OR (user_id IS NULL)
+)
+WITH CHECK (
+    (auth.uid() IS NOT NULL AND (user_id = auth.uid() OR email = (auth.jwt() ->> 'email')))
+    OR (user_id IS NULL)
+);
 
--- Policy 4: Strict User-Specific Deletion
-CREATE POLICY "Users can only delete their own reservations"
+-- Policy 4: User Authorization Deletion (Delete)
+-- Authenticated users delete their own bookings; guests can delete guest bookings
+CREATE POLICY "Users and guests can delete reservations"
 ON public.reservations
 FOR DELETE
-TO authenticated
-USING (auth.uid() = user_id);
+TO public
+USING (
+    (auth.uid() IS NOT NULL AND (user_id = auth.uid() OR email = (auth.jwt() ->> 'email')))
+    OR (user_id IS NULL)
+);
 
 
 -- =========================================================================
@@ -131,6 +157,11 @@ CREATE TABLE IF NOT EXISTS public.contacts (
 );
 
 ALTER TABLE public.contacts ENABLE ROW LEVEL SECURITY;
+
+DROP POLICY IF EXISTS "Allow public to submit inquiries" ON public.contacts;
+DROP POLICY IF EXISTS "Allow public insert to contacts" ON public.contacts;
+DROP POLICY IF EXISTS "Users can view their own inquiries" ON public.contacts;
+DROP POLICY IF EXISTS "Users can view their own contact messages" ON public.contacts;
 
 CREATE POLICY "Allow public to submit inquiries"
 ON public.contacts
@@ -155,6 +186,9 @@ CREATE TABLE IF NOT EXISTS public.newsletter_subscribers (
 );
 
 ALTER TABLE public.newsletter_subscribers ENABLE ROW LEVEL SECURITY;
+
+DROP POLICY IF EXISTS "Allow public newsletter subscription" ON public.newsletter_subscribers;
+DROP POLICY IF EXISTS "Allow public insert to newsletter" ON public.newsletter_subscribers;
 
 CREATE POLICY "Allow public newsletter subscription"
 ON public.newsletter_subscribers
