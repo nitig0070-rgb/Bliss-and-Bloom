@@ -1198,7 +1198,22 @@ document.addEventListener('DOMContentLoaded', () => {
         });
 
         if (error) {
-          showAuthAlert(error.message || 'Could not complete registration.');
+          // Handle specific Supabase error codes with friendly messages
+          let errorMsg = error.message || 'Could not complete registration.';
+          if (
+            errorMsg.toLowerCase().includes('rate limit') ||
+            errorMsg.toLowerCase().includes('email rate') ||
+            error.status === 429
+          ) {
+            errorMsg = 'Too many signup attempts from your connection. Please wait 60 seconds and try again, or check your Supabase dashboard → Authentication → Rate Limits to increase the limit.';
+          } else if (errorMsg.toLowerCase().includes('already registered') || errorMsg.toLowerCase().includes('already exists')) {
+            errorMsg = 'This email address is already registered. Please sign in instead, or use the "Forgot Password" option.';
+          } else if (errorMsg.toLowerCase().includes('invalid email')) {
+            errorMsg = 'Please enter a valid email address.';
+          } else if (errorMsg.toLowerCase().includes('password')) {
+            errorMsg = 'Password must be at least 6 characters long.';
+          }
+          showAuthAlert(errorMsg);
         } else if (data.user && !data.session) {
           showAuthAlert('Account created! A confirmation email has been sent to ' + email + '. Please verify your email to log in.', 'success');
         } else {
