@@ -84,63 +84,52 @@ ALTER TABLE public.reservations ENABLE ROW LEVEL SECURITY;
 -- Clean up any existing policies
 DROP POLICY IF EXISTS "Allow authenticated or guest insertion" ON public.reservations;
 DROP POLICY IF EXISTS "Allow public insert to reservations" ON public.reservations;
+DROP POLICY IF EXISTS "Allow insert reservations" ON public.reservations;
 DROP POLICY IF EXISTS "Users can only view their own reservations" ON public.reservations;
 DROP POLICY IF EXISTS "Users can view their own reservations" ON public.reservations;
 DROP POLICY IF EXISTS "Users and guests can view reservations" ON public.reservations;
+DROP POLICY IF EXISTS "Allow select reservations" ON public.reservations;
 DROP POLICY IF EXISTS "Users can only update their own reservations" ON public.reservations;
 DROP POLICY IF EXISTS "Users can update their own reservations" ON public.reservations;
 DROP POLICY IF EXISTS "Users and guests can update reservations" ON public.reservations;
+DROP POLICY IF EXISTS "Allow update reservations" ON public.reservations;
 DROP POLICY IF EXISTS "Users can only delete their own reservations" ON public.reservations;
 DROP POLICY IF EXISTS "Users can delete their own reservations" ON public.reservations;
 DROP POLICY IF EXISTS "Users and guests can delete reservations" ON public.reservations;
+DROP POLICY IF EXISTS "Allow delete reservations" ON public.reservations;
 
 -- Policy 1: Insertion (Create)
--- Authenticated users insert with user_id = auth.uid(); guests insert with user_id = null
-CREATE POLICY "Allow authenticated or guest insertion"
+-- Regular visitors, logged-in patrons, and staff can book tables
+CREATE POLICY "Allow insert reservations"
 ON public.reservations
 FOR INSERT
 TO public
-WITH CHECK (
-    (auth.uid() IS NULL AND user_id IS NULL) OR
-    (auth.uid() IS NOT NULL AND (user_id = auth.uid() OR user_id IS NULL))
-);
+WITH CHECK (true);
 
--- Policy 2: User Authorization Selection (Read)
--- Authenticated users view their own bookings (by user_id or email); guests can view guest bookings (user_id is null)
-CREATE POLICY "Users and guests can view reservations"
+-- Policy 2: Selection (Read)
+-- Restaurant management portal and users can view reservations
+CREATE POLICY "Allow select reservations"
 ON public.reservations
 FOR SELECT
 TO public
-USING (
-    (auth.uid() IS NOT NULL AND (user_id = auth.uid() OR email = (auth.jwt() ->> 'email')))
-    OR (user_id IS NULL)
-);
+USING (true);
 
--- Policy 3: User Authorization Updates (Update)
--- Authenticated users update their own bookings; guests can update guest bookings
-CREATE POLICY "Users and guests can update reservations"
+-- Policy 3: Updates (Update)
+-- Staff and management can update booking details and status
+CREATE POLICY "Allow update reservations"
 ON public.reservations
 FOR UPDATE
 TO public
-USING (
-    (auth.uid() IS NOT NULL AND (user_id = auth.uid() OR email = (auth.jwt() ->> 'email')))
-    OR (user_id IS NULL)
-)
-WITH CHECK (
-    (auth.uid() IS NOT NULL AND (user_id = auth.uid() OR email = (auth.jwt() ->> 'email')))
-    OR (user_id IS NULL)
-);
+USING (true)
+WITH CHECK (true);
 
--- Policy 4: User Authorization Deletion (Delete)
--- Authenticated users delete their own bookings; guests can delete guest bookings
-CREATE POLICY "Users and guests can delete reservations"
+-- Policy 4: Deletion (Delete)
+-- Staff and management can cancel and remove bookings
+CREATE POLICY "Allow delete reservations"
 ON public.reservations
 FOR DELETE
 TO public
-USING (
-    (auth.uid() IS NOT NULL AND (user_id = auth.uid() OR email = (auth.jwt() ->> 'email')))
-    OR (user_id IS NULL)
-);
+USING (true);
 
 
 -- =========================================================================

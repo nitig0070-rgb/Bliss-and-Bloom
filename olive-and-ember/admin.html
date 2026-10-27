@@ -1,0 +1,436 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Bliss &amp; Bloom — Staff &amp; Management Admin Portal</title>
+  <meta name="robots" content="noindex, nofollow">
+
+  <!-- Google Fonts -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,500;0,600;0,700;1,400&family=Outfit:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+
+  <!-- Stylesheets -->
+  <link rel="stylesheet" href="css/admin.css">
+
+  <!-- Supabase JS Client v2 -->
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+</head>
+<body>
+
+  <!-- =========================================================================
+       1. ADMIN SECURITY GATE (PIN / PASSKEY ACCESS)
+       ========================================================================= -->
+  <div class="admin-lock-screen" id="admin-lock-screen">
+    <div class="lock-card">
+      <div class="lock-badge-icon">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect>
+          <path d="M7 11V7a5 5 0 0 1 10 0v4"></path>
+        </svg>
+      </div>
+      <h2 class="lock-title">Staff Admin Portal</h2>
+      <p class="lock-subtitle">Bliss &amp; Bloom Restaurant Management</p>
+
+      <form id="admin-lock-form" class="lock-form" autocomplete="off">
+        <div class="form-group">
+          <label for="admin-passkey-input">Admin Passkey</label>
+          <input type="password" id="admin-passkey-input" class="lock-input" placeholder="Enter staff passkey (default: admin123)" required autofocus>
+        </div>
+        <button type="submit" class="lock-btn" id="admin-unlock-btn">Unlock Dashboard &rarr;</button>
+        <div class="lock-alert" id="admin-lock-alert"></div>
+      </form>
+
+      <div style="margin-top: 1.5rem; border-top: 1px solid var(--color-border-subtle); padding-top: 1rem;">
+        <a href="index.html" style="font-size: 0.85rem; color: var(--color-charcoal-muted); text-decoration: none;">
+          &larr; Return to Bliss &amp; Bloom Customer Website
+        </a>
+      </div>
+    </div>
+  </div>
+
+  <!-- =========================================================================
+       2. TOP NAVIGATION BAR
+       ========================================================================= -->
+  <nav class="admin-navbar">
+    <div class="admin-nav-left">
+      <a href="index.html" class="admin-brand">
+        <span class="brand-leaf">❧</span>
+        <div class="brand-text">
+          <h1>Bliss &amp; Bloom</h1>
+          <span>Restaurant Staff Portal</span>
+        </div>
+      </a>
+      <div class="status-pill" id="supabase-status-pill">
+        <span class="status-dot"></span>
+        <span id="supabase-status-text">Supabase Live</span>
+      </div>
+    </div>
+
+    <div class="admin-nav-right">
+      <a href="index.html" class="btn-nav-outline" target="_blank" rel="noopener">
+        🌐 View Customer Site
+      </a>
+      <button type="button" class="btn-logout" id="admin-logout-btn">
+        🔒 Lock Portal
+      </button>
+    </div>
+  </nav>
+
+  <!-- =========================================================================
+       3. MAIN DASHBOARD CONTENT
+       ========================================================================= -->
+  <main class="admin-container">
+    
+    <!-- Header Titles & Quick Actions -->
+    <div class="admin-header-row">
+      <div class="admin-header-titles">
+        <h2>Table Reservations Management</h2>
+        <p>Live read, update, and cancellation controls powered by Supabase PostgreSQL.</p>
+      </div>
+      <div class="admin-top-actions">
+        <button type="button" class="btn-outline" id="refresh-data-btn" title="Re-fetch from database">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:14px; height:14px;"><path d="M23 4v6h-6"></path><path d="M1 20v-6h6"></path><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"></path></svg>
+          <span>Refresh</span>
+        </button>
+        <button type="button" class="btn-outline" id="export-csv-btn">
+          📥 Export CSV
+        </button>
+        <button type="button" class="btn-primary" id="open-add-modal-btn">
+          <span>+ Add Reservation</span>
+        </button>
+      </div>
+    </div>
+
+    <!-- Metrics Cards (Calculated dynamically) -->
+    <section class="metrics-grid">
+      <div class="metric-card">
+        <div class="metric-info">
+          <h4>Total Bookings</h4>
+          <div class="metric-val" id="metric-total">0</div>
+        </div>
+        <div class="metric-icon-wrap">📋</div>
+      </div>
+
+      <div class="metric-card confirmed">
+        <div class="metric-info">
+          <h4>Confirmed</h4>
+          <div class="metric-val" id="metric-confirmed">0</div>
+        </div>
+        <div class="metric-icon-wrap">🟢</div>
+      </div>
+
+      <div class="metric-card completed">
+        <div class="metric-info">
+          <h4>Completed</h4>
+          <div class="metric-val" id="metric-completed">0</div>
+        </div>
+        <div class="metric-icon-wrap">✨</div>
+      </div>
+
+      <div class="metric-card cancelled">
+        <div class="metric-info">
+          <h4>Cancelled</h4>
+          <div class="metric-val" id="metric-cancelled">0</div>
+        </div>
+        <div class="metric-icon-wrap">🔴</div>
+      </div>
+
+      <div class="metric-card">
+        <div class="metric-info">
+          <h4>Expected Guests</h4>
+          <div class="metric-val" id="metric-guests">0</div>
+        </div>
+        <div class="metric-icon-wrap">👥</div>
+      </div>
+    </section>
+
+    <!-- Toolbar Filters & Search -->
+    <div class="admin-toolbar-card">
+      <div class="toolbar-search">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>
+        <input type="text" id="admin-search-input" placeholder="Search by customer name, ref (#BB-...), phone, email, date...">
+      </div>
+
+      <div class="toolbar-filters">
+        <select id="filter-status" class="filter-select">
+          <option value="all">All Statuses</option>
+          <option value="confirmed">Confirmed</option>
+          <option value="completed">Completed</option>
+          <option value="cancelled">Cancelled</option>
+        </select>
+
+        <select id="filter-date" class="filter-select">
+          <option value="all">All Dates</option>
+          <option value="today">Today's Bookings</option>
+          <option value="upcoming">Upcoming</option>
+        </select>
+
+        <button type="button" class="btn-outline" id="print-sheet-btn" title="Print daily guest roster">
+          🖨️ Print Roster
+        </button>
+      </div>
+    </div>
+
+    <!-- Data Table Card (READ) -->
+    <div class="table-card">
+      <div class="table-responsive">
+        <table class="admin-table" id="reservations-table">
+          <thead>
+            <tr>
+              <th>Ref ID</th>
+              <th>Customer Details</th>
+              <th>Date &amp; Time</th>
+              <th>Party Size</th>
+              <th>Occasion</th>
+              <th>Special Requests</th>
+              <th>Status</th>
+              <th>Actions</th>
+            </tr>
+          </thead>
+          <tbody id="reservations-tbody">
+            <!-- Dynamic rows generated by admin.js -->
+          </tbody>
+        </table>
+      </div>
+
+      <!-- Loading State -->
+      <div class="table-loading-state" id="table-loading-state">
+        <div class="admin-spinner"></div>
+        <p>Loading table reservations from Supabase database...</p>
+      </div>
+
+      <!-- Empty State -->
+      <div class="table-empty-state" id="table-empty-state" style="display: none;">
+        <h4 style="font-family: var(--font-serif); font-size: 1.25rem; color: var(--color-primary); margin-bottom: 0.35rem;">No Reservations Found</h4>
+        <p style="font-size: 0.875rem;">No bookings match your current filter or database is currently empty.</p>
+      </div>
+    </div>
+
+  </main>
+
+  <!-- =========================================================================
+       4. EDIT RESERVATION MODAL (UPDATE)
+       ========================================================================= -->
+  <div class="admin-modal-backdrop" id="edit-modal-backdrop">
+    <div class="admin-modal-card">
+      <button type="button" class="modal-close-icon" id="close-edit-modal-btn">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:20px; height:20px;"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
+      </button>
+
+      <div class="modal-header">
+        <h3>Edit Reservation</h3>
+        <p>Modify customer details, schedule, or table status.</p>
+      </div>
+
+      <form id="admin-edit-form" novalidate>
+        <input type="hidden" id="edit-booking-id">
+        <input type="hidden" id="edit-booking-ref">
+
+        <div class="form-grid-2">
+          <div class="form-field">
+            <label for="edit-name">Customer Name *</label>
+            <input type="text" id="edit-name" required>
+          </div>
+          <div class="form-field">
+            <label for="edit-phone">Phone Number *</label>
+            <input type="tel" id="edit-phone" required>
+          </div>
+        </div>
+
+        <div class="form-grid-2">
+          <div class="form-field">
+            <label for="edit-email">Email Address *</label>
+            <input type="email" id="edit-email" required>
+          </div>
+          <div class="form-field">
+            <label for="edit-guests">Number of Guests *</label>
+            <select id="edit-guests" required>
+              <option value="1">1 Guest (Solo)</option>
+              <option value="2">2 Guests (Table for Two)</option>
+              <option value="3">3 Guests</option>
+              <option value="4">4 Guests</option>
+              <option value="5">5 Guests</option>
+              <option value="6">6 Guests</option>
+              <option value="7">7 Guests</option>
+              <option value="8">8 Guests</option>
+              <option value="9">9+ Guests (Large Party)</option>
+            </select>
+          </div>
+        </div>
+
+        <div class="form-grid-2">
+          <div class="form-field">
+            <label for="edit-date">Reservation Date *</label>
+            <input type="date" id="edit-date" required>
+          </div>
+          <div class="form-field">
+            <label for="edit-time">Time Slot *</label>
+            <select id="edit-time" required>
+              <optgroup label="Lunch Service">
+                <option value="12:00 PM">12:00 PM</option>
+                <option value="12:30 PM">12:30 PM</option>
+                <option value="01:00 PM">01:00 PM</option>
+                <option value="01:30 PM">01:30 PM</option>
+                <option value="02:00 PM">02:00 PM</option>
+                <option value="02:30 PM">02:30 PM</option>
+              </optgroup>
+              <optgroup label="Dinner Service">
+                <option value="06:30 PM">06:30 PM</option>
+                <option value="07:00 PM">07:00 PM</option>
+                <option value="07:30 PM">07:30 PM</option>
+                <option value="08:00 PM">08:00 PM</option>
+                <option value="08:30 PM">08:30 PM</option>
+                <option value="09:00 PM">09:00 PM</option>
+                <option value="09:30 PM">09:30 PM</option>
+                <option value="10:00 PM">10:00 PM</option>
+              </optgroup>
+            </select>
+          </div>
+        </div>
+
+        <div class="form-grid-2">
+          <div class="form-field">
+            <label for="edit-occasion">Dining Occasion</label>
+            <select id="edit-occasion">
+              <option value="Casual Dining">Casual Dining</option>
+              <option value="Birthday Celebration">Birthday Celebration</option>
+              <option value="Anniversary">Anniversary</option>
+              <option value="Business Dinner">Business Dinner</option>
+              <option value="Romantic Date">Romantic Date</option>
+              <option value="Family Gathering">Family Gathering</option>
+            </select>
+          </div>
+          <div class="form-field">
+            <label for="edit-status">Booking Status</label>
+            <select id="edit-status">
+              <option value="confirmed">Confirmed</option>
+              <option value="completed">Completed</option>
+              <option value="cancelled">Cancelled</option>
+            </select>
+          </div>
+        </div>
+
+        <div class="form-field">
+          <label for="edit-notes">Special Requests &amp; Dietary Notes</label>
+          <textarea id="edit-notes" rows="2" placeholder="Seating preference, allergies, etc."></textarea>
+        </div>
+
+        <div class="modal-footer">
+          <button type="button" class="btn-outline" id="cancel-edit-btn">Cancel</button>
+          <button type="submit" class="btn-primary" id="save-edit-btn">Save Changes</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- =========================================================================
+       5. ADD NEW RESERVATION MODAL (CREATE FROM ADMIN)
+       ========================================================================= -->
+  <div class="admin-modal-backdrop" id="add-modal-backdrop">
+    <div class="admin-modal-card">
+      <button type="button" class="modal-close-icon" id="close-add-modal-btn">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:20px; height:20px;"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
+      </button>
+
+      <div class="modal-header">
+        <h3>+ New Walk-In / Phone Booking</h3>
+        <p>Directly record a new reservation into Supabase database.</p>
+      </div>
+
+      <form id="admin-add-form" novalidate>
+        <div class="form-grid-2">
+          <div class="form-field">
+            <label for="add-name">Customer Name *</label>
+            <input type="text" id="add-name" placeholder="e.g. Rahul Verma" required>
+          </div>
+          <div class="form-field">
+            <label for="add-phone">Phone Number *</label>
+            <input type="tel" id="add-phone" placeholder="e.g. +91 98765 43210" required>
+          </div>
+        </div>
+
+        <div class="form-grid-2">
+          <div class="form-field">
+            <label for="add-email">Email Address *</label>
+            <input type="email" id="add-email" placeholder="name@example.com" required>
+          </div>
+          <div class="form-field">
+            <label for="add-guests">Number of Guests *</label>
+            <select id="add-guests" required>
+              <option value="1">1 Guest</option>
+              <option value="2" selected>2 Guests</option>
+              <option value="3">3 Guests</option>
+              <option value="4">4 Guests</option>
+              <option value="5">5 Guests</option>
+              <option value="6">6 Guests</option>
+              <option value="7">7 Guests</option>
+              <option value="8">8 Guests</option>
+              <option value="9">9+ Guests</option>
+            </select>
+          </div>
+        </div>
+
+        <div class="form-grid-2">
+          <div class="form-field">
+            <label for="add-date">Reservation Date *</label>
+            <input type="date" id="add-date" required>
+          </div>
+          <div class="form-field">
+            <label for="add-time">Time Slot *</label>
+            <select id="add-time" required>
+              <optgroup label="Lunch Service">
+                <option value="12:00 PM">12:00 PM</option>
+                <option value="12:30 PM">12:30 PM</option>
+                <option value="01:00 PM">01:00 PM</option>
+                <option value="01:30 PM">01:30 PM</option>
+                <option value="02:00 PM">02:00 PM</option>
+                <option value="02:30 PM">02:30 PM</option>
+              </optgroup>
+              <optgroup label="Dinner Service">
+                <option value="06:30 PM">06:30 PM</option>
+                <option value="07:00 PM">07:00 PM</option>
+                <option value="07:30 PM" selected>07:30 PM</option>
+                <option value="08:00 PM">08:00 PM</option>
+                <option value="08:30 PM">08:30 PM</option>
+                <option value="09:00 PM">09:00 PM</option>
+                <option value="09:30 PM">09:30 PM</option>
+                <option value="10:00 PM">10:00 PM</option>
+              </optgroup>
+            </select>
+          </div>
+        </div>
+
+        <div class="form-field">
+          <label for="add-occasion">Dining Occasion</label>
+          <select id="add-occasion">
+            <option value="Casual Dining">Casual Dining</option>
+            <option value="Birthday Celebration">Birthday Celebration</option>
+            <option value="Anniversary">Anniversary</option>
+            <option value="Business Dinner">Business Dinner</option>
+            <option value="Romantic Date">Romantic Date</option>
+          </select>
+        </div>
+
+        <div class="form-field">
+          <label for="add-notes">Special Requests &amp; Notes</label>
+          <textarea id="add-notes" rows="2" placeholder="Window seating, dietary preferences, etc."></textarea>
+        </div>
+
+        <div class="modal-footer">
+          <button type="button" class="btn-outline" id="cancel-add-btn">Cancel</button>
+          <button type="submit" class="btn-primary" id="save-add-btn">Create Reservation</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- Toast Notification Feedback -->
+  <div class="toast-notice" id="admin-toast"></div>
+
+  <!-- Scripts -->
+  <script src="js/config.js"></script>
+  <script src="js/admin.js"></script>
+</body>
+</html>
